@@ -104,14 +104,21 @@ def require_auth(request: Request):
 
 def play_audio(filepath: str):
     """Play a WAV file through the default audio output."""
+    import platform
     try:
-        import pygame
-        pygame.mixer.init()
-        pygame.mixer.music.load(filepath)
-        pygame.mixer.music.play()
-        while pygame.mixer.music.get_busy():
-            pygame.time.wait(100)
-        pygame.mixer.quit()
+        system = platform.system()
+        if system == "Linux":
+            subprocess.run(["aplay", filepath], capture_output=True, timeout=30)
+        elif system == "Darwin":
+            subprocess.run(["afplay", filepath], capture_output=True, timeout=30)
+        elif system == "Windows":
+            import pygame
+            pygame.mixer.init()
+            pygame.mixer.music.load(filepath)
+            pygame.mixer.music.play()
+            while pygame.mixer.music.get_busy():
+                pygame.time.wait(100)
+            pygame.mixer.quit()
     except Exception as e:
         print(f"Erreur lecture audio: {e}")
 

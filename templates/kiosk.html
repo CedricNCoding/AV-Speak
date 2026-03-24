@@ -128,13 +128,14 @@
 
         async function doAnnounce() {
             if (!selectedContactId) return;
+            const contactId = selectedContactId;
             closeModal();
 
             const overlay = document.getElementById('successOverlay');
             overlay.classList.add('active');
 
             try {
-                const resp = await fetch('/api/announce/' + selectedContactId, { method: 'POST' });
+                const resp = await fetch('/api/announce/' + contactId, { method: 'POST' });
                 const data = await resp.json();
                 document.getElementById('successText').textContent = data.message;
             } catch (e) {

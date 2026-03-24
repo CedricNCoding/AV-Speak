@@ -21,6 +21,13 @@
         .contact-btn:hover { border-color: var(--color-primary); }
         .top-btn { background: var(--color-button); color: var(--color-button-text); }
         .btn-confirm { background: var(--color-button); }
+        .visitor-fields { max-width: 700px; margin: 0 auto; }
+        .visitor-fields input {
+            width: 48%; padding: 12px 15px; font-size: 1.1rem;
+            border: 2px solid #ddd; border-radius: 10px; margin: 4px 1%;
+        }
+        .visitor-fields input:focus { border-color: var(--color-primary); outline: none; }
+        .visitor-notice { font-size: 0.8rem; color: #999; text-align: center; margin-top: 5px; }
     </style>
 </head>
 <body class="kiosk-body">
@@ -35,7 +42,7 @@
 
     <div class="search-section">
         <input type="text" class="search-input" id="searchInput"
-               placeholder="Tapez un nom ou un prenom..."
+               placeholder="Tapez un nom ou un pr&eacute;nom..."
                autocomplete="off" autofocus>
     </div>
 
@@ -44,7 +51,7 @@
     </div>
 
     <div class="top-section" id="topSection">
-        <h2>Contacts frequents</h2>
+        <h2>Contacts fr&eacute;quents</h2>
         <div class="top-grid" id="topGrid">
             {% for c in top_contacts %}
             <button class="top-btn" onclick="confirmAnnounce({{ c.id }}, '{{ c.prenom }}', '{{ c.nom }}')">
@@ -59,7 +66,14 @@
         <div class="modal-box">
             <h2>Confirmer l'appel</h2>
             <p id="confirmText"></p>
-            <div class="modal-actions">
+
+            <div class="visitor-fields">
+                <input type="text" id="visitorName" placeholder="Votre nom (facultatif)">
+                <input type="email" id="visitorEmail" placeholder="Votre email (facultatif)">
+                <p class="visitor-notice">Ces informations ne sont pas stock&eacute;es et servent uniquement &agrave; la notification.</p>
+            </div>
+
+            <div class="modal-actions" style="margin-top:20px;">
                 <button class="btn-cancel" onclick="closeModal()">Annuler</button>
                 <button class="btn-confirm" id="confirmBtn" onclick="doAnnounce()"
                         style="background: var(--color-button); color: var(--color-button-text);">
@@ -103,7 +117,7 @@
             const contacts = await resp.json();
             resultsList.innerHTML = '';
             if (contacts.length === 0) {
-                resultsList.innerHTML = '<li style="padding:20px; text-align:center; font-size:1.2rem; color:#999;">Aucun resultat</li>';
+                resultsList.innerHTML = '<li style="padding:20px; text-align:center; font-size:1.2rem; color:#999;">Aucun r\u00e9sultat</li>';
             } else {
                 contacts.forEach(c => {
                     const li = document.createElement('li');
@@ -120,7 +134,9 @@
         function confirmAnnounce(id, prenom, nom) {
             selectedContactId = id;
             document.getElementById('confirmText').textContent =
-                `Appeler ${prenom} ${nom} a l'accueil ?`;
+                `Appeler ${prenom} ${nom} \u00e0 l'accueil ?`;
+            document.getElementById('visitorName').value = '';
+            document.getElementById('visitorEmail').value = '';
             document.getElementById('confirmModal').classList.add('active');
         }
 
@@ -132,13 +148,19 @@
         async function doAnnounce() {
             if (!selectedContactId) return;
             const contactId = selectedContactId;
+            const visitorName = document.getElementById('visitorName').value.trim();
+            const visitorEmail = document.getElementById('visitorEmail').value.trim();
             closeModal();
 
             const overlay = document.getElementById('successOverlay');
             overlay.classList.add('active');
 
             try {
-                const resp = await fetch('/api/announce/' + contactId, { method: 'POST' });
+                const params = new URLSearchParams();
+                if (visitorName) params.append('visitor_name', visitorName);
+                if (visitorEmail) params.append('visitor_email', visitorEmail);
+                const url = '/api/announce/' + contactId + (params.toString() ? '?' + params.toString() : '');
+                const resp = await fetch(url, { method: 'POST' });
                 const data = await resp.json();
                 document.getElementById('successText').textContent = data.message;
 

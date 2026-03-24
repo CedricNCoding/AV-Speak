@@ -92,7 +92,7 @@ def init_db():
         "smtp_from": "",
         "smtp_tls": "1",
         "email_subject": "Visite de {civilite} {prenom} {nom}",
-        "email_body": "Bonjour,\n\n{civilite} {prenom} {nom} vous attend a l'accueil.\n\nCordialement,\n{entreprise}",
+        "email_body": "Bonjour,\n\n{civilite} {prenom} {nom} vous attend a l'accueil.\n\nVisiteur : {visiteur_nom}\nEmail visiteur : {visiteur_email}\n\nCordialement,\n{entreprise}",
         # OVH SMS
         "sms_enabled": "0",
         "ovh_endpoint": "ovh-eu",
@@ -101,7 +101,7 @@ def init_db():
         "ovh_consumer_key": "",
         "ovh_sms_service": "",
         "ovh_sms_sender": "",
-        "sms_body": "{civilite} {prenom} {nom} vous attend a l'accueil.",
+        "sms_body": "{civilite} {prenom} {nom} vous attend a l'accueil. Visiteur: {visiteur_nom}",
         # Notifications
         "notif_on_announce": "1",
     }
@@ -162,7 +162,8 @@ def generate_tts(texte: str) -> str | None:
 
 # --- Email sending ---
 
-def send_email(settings: dict, contact: dict, civilite: str):
+def send_email(settings: dict, contact: dict, civilite: str,
+               visitor_name: str = "", visitor_email: str = ""):
     """Send notification email to the contact."""
     if settings.get("smtp_enabled") != "1":
         return
@@ -171,14 +172,14 @@ def send_email(settings: dict, contact: dict, civilite: str):
         return
 
     try:
-        subject = settings["email_subject"].format(
+        tpl_vars = dict(
             civilite=civilite, prenom=contact["prenom"],
-            nom=contact["nom"], entreprise=settings.get("entreprise_nom", "")
-        ).strip()
-        body = settings["email_body"].format(
-            civilite=civilite, prenom=contact["prenom"],
-            nom=contact["nom"], entreprise=settings.get("entreprise_nom", "")
-        ).strip()
+            nom=contact["nom"], entreprise=settings.get("entreprise_nom", ""),
+            visiteur_nom=visitor_name or "Non renseigné",
+            visiteur_email=visitor_email or "Non renseigné",
+        )
+        subject = settings["email_subject"].format(**tpl_vars).strip()
+        body = settings["email_body"].format(**tpl_vars).strip()
 
         msg = MIMEMultipart()
         msg["From"] = settings["smtp_from"]
@@ -204,7 +205,8 @@ def send_email(settings: dict, contact: dict, civilite: str):
 
 # --- OVH SMS sending ---
 
-def send_sms(settings: dict, contact: dict, civilite: str):
+def send_sms(settings: dict, contact: dict, civilite: str,
+             visitor_name: str = "", visitor_email: str = ""):
     """Send notification SMS via OVH API."""
     if settings.get("sms_enabled") != "1":
         return
@@ -221,10 +223,13 @@ def send_sms(settings: dict, contact: dict, civilite: str):
             consumer_key=settings["ovh_consumer_key"],
         )
 
-        body = settings["sms_body"].format(
+        tpl_vars = dict(
             civilite=civilite, prenom=contact["prenom"],
-            nom=contact["nom"], entreprise=settings.get("entreprise_nom", "")
-        ).strip()
+            nom=contact["nom"], entreprise=settings.get("entreprise_nom", ""),
+            visiteur_nom=visitor_name or "Non renseigné",
+            visiteur_email=visitor_email or "Non renseigné",
+        )
+        body = settings["sms_body"].format(**tpl_vars).strip()
 
         service = settings["ovh_sms_service"]
         sender = settings.get("ovh_sms_sender", "")
@@ -247,12 +252,14 @@ def send_sms(settings: dict, contact: dict, civilite: str):
         print(f"Erreur envoi SMS: {e}")
 
 
-def send_notifications(settings: dict, contact: dict, civilite: str):
+def send_notifications(settings: dict, contact: dict, civilite: str,
+                       visitor_name: str = "", visitor_email: str = ""):
     """Send email and SMS in background threads."""
     if settings.get("notif_on_announce") != "1":
         return
-    threading.Thread(target=send_email, args=(settings, dict(contact), civilite)).start()
-    threading.Thread(target=send_sms, args=(settings, dict(contact), civilite)).start()
+    contact_dict = dict(contact)
+    threading.Thread(target=send_email, args=(settings, contact_dict, civilite, visitor_name, visitor_email)).start()
+    threading.Thread(target=send_sms, args=(settings, contact_dict, civilite, visitor_name, visitor_email)).start()
 
 
 # --- Routes: Kiosk (Frontend tactile) ---
@@ -304,7 +311,7 @@ async def top_contacts():
 
 
 @app.post("/api/announce/{contact_id}")
-async def announce(contact_id: int):
+async def announce(contact_id: int, visitor_name: str = "", visitor_email: str = ""):
     conn = get_db()
     contact = conn.execute("SELECT * FROM contacts WHERE id = ?", (contact_id,)).fetchone()
     if not contact:
@@ -332,7 +339,7 @@ async def announce(contact_id: int):
 
     audio_file = generate_tts(texte)
 
-    send_notifications(settings, contact, civilite)
+    send_notifications(settings, contact, civilite, visitor_name.strip(), visitor_email.strip())
 
     return {
         "status": "ok",

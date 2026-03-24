@@ -16,7 +16,7 @@
         <h1>Administration</h1>
         <div class="admin-nav">
             <a href="/" target="_blank" style="color: var(--color-primary);">Voir le kiosk</a>
-            <a href="/admin/logout" style="color: #e53935;">Deconnexion</a>
+            <a href="/admin/logout" style="color: #e53935;">D&eacute;connexion</a>
         </div>
     </div>
 
@@ -35,12 +35,12 @@
                 <select name="civilite" style="flex:0 0 130px;">
                     <option value="M">Monsieur</option>
                     <option value="Mme">Madame</option>
-                    <option value="X" selected>Non precise</option>
+                    <option value="X" selected>Non pr&eacute;cis&eacute;</option>
                 </select>
                 <input type="text" name="nom" placeholder="Nom" required>
-                <input type="text" name="prenom" placeholder="Prenom" required>
+                <input type="text" name="prenom" placeholder="Pr&eacute;nom" required>
                 <input type="email" name="email" placeholder="Email">
-                <input type="tel" name="telephone" placeholder="Telephone">
+                <input type="tel" name="telephone" placeholder="T&eacute;l&eacute;phone">
                 <button type="submit" class="btn btn-primary">Ajouter</button>
             </div>
         </form>
@@ -48,7 +48,7 @@
         <div class="import-section">
             <h3>Importer des contacts (CSV)</h3>
             <p style="font-size:0.85rem; color:#888; margin-bottom:10px;">
-                Format attendu : colonnes Nom;Prenom;Civilite;Email;Telephone (separateur point-virgule). Civilite : M, Mme, ou vide
+                Format attendu : colonnes Nom;Pr&eacute;nom;Civilit&eacute;;Email;T&eacute;l&eacute;phone (s&eacute;parateur point-virgule). Civilit&eacute; : M, Mme, ou vide
             </p>
             <form method="POST" action="/admin/contacts/import" enctype="multipart/form-data">
                 <input type="file" name="csv_file" accept=".csv" required>
@@ -59,11 +59,11 @@
         <table class="contacts-table">
             <thead>
                 <tr>
-                    <th>Civilite</th>
+                    <th>Civilit&eacute;</th>
                     <th>Nom</th>
-                    <th>Prenom</th>
+                    <th>Pr&eacute;nom</th>
                     <th>Email</th>
-                    <th>Telephone</th>
+                    <th>T&eacute;l&eacute;phone</th>
                     <th>Appels</th>
                     <th>Actions</th>
                 </tr>
@@ -72,11 +72,11 @@
                 {% for c in contacts %}
                 <tr id="row-{{ c.id }}">
                     <td>
-                        <span class="display-field">{% if c.civilite == 'M' %}M.{% elif c.civilite == 'Mme' %}Mme{% else %}—{% endif %}</span>
+                        <span class="display-field">{% if c.civilite == 'M' %}M.{% elif c.civilite == 'Mme' %}Mme{% else %}&mdash;{% endif %}</span>
                         <select class="edit-field" style="display:none; width:100%;" data-field="civilite">
                             <option value="M" {% if c.civilite == 'M' %}selected{% endif %}>Monsieur</option>
                             <option value="Mme" {% if c.civilite == 'Mme' %}selected{% endif %}>Madame</option>
-                            <option value="" {% if c.civilite == 'X' %}selected{% endif %}>Non precise</option>
+                            <option value="X" {% if c.civilite == 'X' %}selected{% endif %}>Non pr&eacute;cis&eacute;</option>
                         </select>
                     </td>
                     <td>
@@ -129,14 +129,14 @@
                 <input type="file" name="logo_file" accept=".png,.jpg,.jpeg,.svg,.webp" required>
                 <button type="submit" class="btn btn-small btn-primary">Envoyer</button>
             </form>
-            <p style="font-size:0.85rem; color:#888; margin-top:5px;">Formats acceptes : PNG, JPG, SVG, WebP</p>
+            <p style="font-size:0.85rem; color:#888; margin-top:5px;">Formats accept&eacute;s : PNG, JPG, SVG, WebP</p>
         </div>
 
         <form method="POST" action="/admin/settings">
             <div class="settings-group">
                 <h3>Nom de l'entreprise</h3>
                 <div class="color-row">
-                    <label>Titre affiche sur le kiosk</label>
+                    <label>Titre affich&eacute; sur le kiosk</label>
                     <input type="text" name="entreprise_nom" value="{{ settings.entreprise_nom }}">
                 </div>
             </div>
@@ -179,15 +179,15 @@
                            style="width:100%; max-width:500px;">
                 </div>
                 <p style="font-size:0.85rem; color:#888; margin-top:8px;">
-                    Exemple : "{civilite} {prenom} {nom} est demande a l'accueil"
+                    Exemple : &laquo; {civilite} {prenom} {nom} est demand&eacute; &agrave; l'accueil &raquo;
                 </p>
             </div>
             <button type="submit" class="btn btn-primary">Enregistrer</button>
         </form>
 
         <div style="margin-top:30px; padding:20px; background:#f0f8ff; border-radius:12px;">
-            <h3>Apercu</h3>
-            <p style="margin:10px 0;">Les changements seront visibles sur le kiosk apres enregistrement.</p>
+            <h3>Aper&ccedil;u</h3>
+            <p style="margin:10px 0;">Les changements seront visibles sur le kiosk apr&egrave;s enregistrement.</p>
             <a href="/" target="_blank" class="btn btn-primary" style="display:inline-block; text-decoration:none;">
                 Ouvrir le kiosk
             </a>
@@ -244,13 +244,13 @@
                     <input type="password" name="smtp_password" value="{{ settings.smtp_password }}">
                 </div>
                 <div class="color-row">
-                    <label>Adresse expediteur</label>
+                    <label>Adresse exp&eacute;diteur</label>
                     <input type="text" name="smtp_from" value="{{ settings.smtp_from }}" placeholder="accueil@entreprise.com">
                 </div>
 
-                <h4 style="margin-top:20px; margin-bottom:10px;">Modele d'email</h4>
+                <h4 style="margin-top:20px; margin-bottom:10px;">Mod&egrave;le d'email</h4>
                 <p style="font-size:0.85rem; color:#888; margin-bottom:10px;">
-                    Blocs disponibles : <strong>{civilite}</strong>, <strong>{nom}</strong>, <strong>{prenom}</strong>, <strong>{entreprise}</strong>
+                    Blocs disponibles : <strong>{civilite}</strong>, <strong>{nom}</strong>, <strong>{prenom}</strong>, <strong>{entreprise}</strong>, <strong>{visiteur_nom}</strong>, <strong>{visiteur_email}</strong>
                 </p>
                 <div class="color-row">
                     <label>Objet</label>
@@ -302,13 +302,13 @@
                     <input type="text" name="ovh_sms_service" value="{{ settings.ovh_sms_service }}" placeholder="sms-xxx">
                 </div>
                 <div class="color-row">
-                    <label>Expediteur (optionnel)</label>
+                    <label>Exp&eacute;diteur (optionnel)</label>
                     <input type="text" name="ovh_sms_sender" value="{{ settings.ovh_sms_sender }}" placeholder="MonEntreprise">
                 </div>
 
-                <h4 style="margin-top:20px; margin-bottom:10px;">Modele de SMS</h4>
+                <h4 style="margin-top:20px; margin-bottom:10px;">Mod&egrave;le de SMS</h4>
                 <p style="font-size:0.85rem; color:#888; margin-bottom:10px;">
-                    Blocs disponibles : <strong>{civilite}</strong>, <strong>{nom}</strong>, <strong>{prenom}</strong>, <strong>{entreprise}</strong>
+                    Blocs disponibles : <strong>{civilite}</strong>, <strong>{nom}</strong>, <strong>{prenom}</strong>, <strong>{entreprise}</strong>, <strong>{visiteur_nom}</strong>
                 </p>
                 <div style="margin-top:8px;">
                     <label style="display:block; margin-bottom:5px; font-weight:500;">Texte du SMS</label>
@@ -324,7 +324,7 @@
             </div>
 
             <div style="margin-top:20px;">
-                <button type="submit" class="btn btn-primary">Enregistrer les parametres</button>
+                <button type="submit" class="btn btn-primary">Enregistrer les param&egrave;tres</button>
             </div>
         </form>
     </div>
@@ -344,7 +344,7 @@
             <button type="submit" class="btn btn-primary">Changer le mot de passe</button>
         </form>
         <p style="margin-top:15px; color:#888; font-size:0.9rem;">
-            Identifiant par defaut : <strong>admin</strong> / Mot de passe : <strong>admin</strong>
+            Identifiant par d&eacute;faut : <strong>admin</strong> / Mot de passe : <strong>admin</strong>
         </p>
     </div>
 
@@ -397,7 +397,7 @@
 
         async function testSms() {
             const phone = document.getElementById('test-phone').value;
-            if (!phone) { alert('Entrez un numero de telephone'); return; }
+            if (!phone) { alert('Entrez un num\u00e9ro de t\u00e9l\u00e9phone'); return; }
             const result = document.getElementById('sms-test-result');
             result.textContent = 'Envoi en cours...';
             result.style.color = '#666';

@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Administration - AV-Speak</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <style>
+        :root { --color-primary: {{ settings.color_primary }}; }
+        .btn-primary { background: var(--color-primary); }
+        .admin-tab.active { border-bottom-color: var(--color-primary); color: var(--color-primary); }
+    </style>
+</head>
+<body class="admin-body">
+    <div class="admin-header">
+        <h1>Administration</h1>
+        <div class="admin-nav">
+            <a href="/" target="_blank" style="color: var(--color-primary);">Voir le kiosk</a>
+            <a href="/admin/logout" style="color: #e53935;">Deconnexion</a>
+        </div>
+    </div>
+
+    <div class="admin-tabs">
+        <button class="admin-tab active" onclick="showTab('contacts')">Contacts</button>
+        <button class="admin-tab" onclick="showTab('settings')">Apparence</button>
+        <button class="admin-tab" onclick="showTab('password')">Mot de passe</button>
+    </div>
+
+    <!-- Contacts panel -->
+    <div class="admin-panel active" id="panel-contacts">
+        <h2>Ajouter un contact</h2>
+        <form method="POST" action="/admin/contacts/add">
+            <div class="form-row">
+                <input type="text" name="nom" placeholder="Nom" required>
+                <input type="text" name="prenom" placeholder="Prenom" required>
+                <input type="email" name="email" placeholder="Email">
+                <input type="tel" name="telephone" placeholder="Telephone">
+                <button type="submit" class="btn btn-primary">Ajouter</button>
+            </div>
+        </form>
+
+        <div class="import-section">
+            <h3>Importer des contacts (CSV)</h3>
+            <p style="font-size:0.85rem; color:#888; margin-bottom:10px;">
+                Format attendu : colonnes Nom;Prenom;Email;Telephone (separateur point-virgule)
+            </p>
+            <form method="POST" action="/admin/contacts/import" enctype="multipart/form-data">
+                <input type="file" name="csv_file" accept=".csv" required>
+                <button type="submit" class="btn btn-primary">Importer</button>
+            </form>
+        </div>
+
+        <table class="contacts-table">
+            <thead>
+                <tr>
+                    <th>Nom</th>
+                    <th>Prenom</th>
+                    <th>Email</th>
+                    <th>Telephone</th>
+                    <th>Appels</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for c in contacts %}
+                <tr id="row-{{ c.id }}">
+                    <td>
+                        <span class="display-field">{{ c.nom }}</span>
+                        <input class="edit-field" type="text" value="{{ c.nom }}" style="display:none; width:100%;" data-field="nom">
+                    </td>
+                    <td>
+                        <span class="display-field">{{ c.prenom }}</span>
+                        <input class="edit-field" type="text" value="{{ c.prenom }}" style="display:none; width:100%;" data-field="prenom">
+                    </td>
+                    <td>
+                        <span class="display-field">{{ c.email }}</span>
+                        <input class="edit-field" type="text" value="{{ c.email }}" style="display:none; width:100%;" data-field="email">
+                    </td>
+                    <td>
+                        <span class="display-field">{{ c.telephone }}</span>
+                        <input class="edit-field" type="text" value="{{ c.telephone }}" style="display:none; width:100%;" data-field="telephone">
+                    </td>
+                    <td>{{ c.call_count }}</td>
+                    <td style="white-space:nowrap;">
+                        <button class="btn btn-small btn-primary edit-btn" onclick="toggleEdit({{ c.id }})">Modifier</button>
+                        <button class="btn btn-small btn-primary save-btn" onclick="saveEdit({{ c.id }})" style="display:none;">Sauver</button>
+                        <form method="POST" action="/admin/contacts/delete/{{ c.id }}" style="display:inline;"
+                              onsubmit="return confirm('Supprimer ce contact ?')">
+                            <button type="submit" class="btn btn-small btn-danger">Supprimer</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Settings panel -->
+    <div class="admin-panel" id="panel-settings">
+        <h2>Apparence du kiosk</h2>
+        <form method="POST" action="/admin/settings">
+            <div class="settings-group">
+                <h3>Nom de l'entreprise</h3>
+                <div class="color-row">
+                    <label>Titre affiche sur le kiosk</label>
+                    <input type="text" name="entreprise_nom" value="{{ settings.entreprise_nom }}">
+                </div>
+            </div>
+            <div class="settings-group">
+                <h3>Couleurs</h3>
+                <div class="color-row">
+                    <label>Couleur principale</label>
+                    <input type="color" name="color_primary" value="{{ settings.color_primary }}">
+                </div>
+                <div class="color-row">
+                    <label>Fond de page</label>
+                    <input type="color" name="color_background" value="{{ settings.color_background }}">
+                </div>
+                <div class="color-row">
+                    <label>Fond des cartes</label>
+                    <input type="color" name="color_secondary" value="{{ settings.color_secondary }}">
+                </div>
+                <div class="color-row">
+                    <label>Texte</label>
+                    <input type="color" name="color_text" value="{{ settings.color_text }}">
+                </div>
+                <div class="color-row">
+                    <label>Boutons</label>
+                    <input type="color" name="color_button" value="{{ settings.color_button }}">
+                </div>
+                <div class="color-row">
+                    <label>Texte des boutons</label>
+                    <input type="color" name="color_button_text" value="{{ settings.color_button_text }}">
+                </div>
+            </div>
+            <button type="submit" class="btn btn-primary">Enregistrer</button>
+        </form>
+
+        <div style="margin-top:30px; padding:20px; background:#f0f8ff; border-radius:12px;">
+            <h3>Apercu</h3>
+            <p style="margin:10px 0;">Les changements seront visibles sur le kiosk apres enregistrement.</p>
+            <a href="/" target="_blank" class="btn btn-primary" style="display:inline-block; text-decoration:none;">
+                Ouvrir le kiosk
+            </a>
+        </div>
+    </div>
+
+    <!-- Password panel -->
+    <div class="admin-panel" id="panel-password">
+        <h2>Changer le mot de passe</h2>
+        <form method="POST" action="/admin/password" style="max-width:400px;">
+            <div style="margin-bottom:12px;">
+                <input type="password" name="current_password" placeholder="Mot de passe actuel"
+                       required style="width:100%; padding:12px; font-size:1rem; border:2px solid #ddd; border-radius:8px;">
+            </div>
+            <div style="margin-bottom:12px;">
+                <input type="password" name="new_password" placeholder="Nouveau mot de passe"
+                       required minlength="4" style="width:100%; padding:12px; font-size:1rem; border:2px solid #ddd; border-radius:8px;">
+            </div>
+            <button type="submit" class="btn btn-primary">Changer le mot de passe</button>
+        </form>
+        <p style="margin-top:15px; color:#888; font-size:0.9rem;">
+            Identifiant par defaut : <strong>admin</strong> / Mot de passe : <strong>admin</strong>
+        </p>
+    </div>
+
+    <script>
+        function showTab(name) {
+            document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.admin-panel').forEach(p => p.classList.remove('active'));
+            event.target.classList.add('active');
+            document.getElementById('panel-' + name).classList.add('active');
+        }
+
+        function toggleEdit(id) {
+            const row = document.getElementById('row-' + id);
+            row.querySelectorAll('.display-field').forEach(el => el.style.display = 'none');
+            row.querySelectorAll('.edit-field').forEach(el => el.style.display = 'block');
+            row.querySelector('.edit-btn').style.display = 'none';
+            row.querySelector('.save-btn').style.display = 'inline-block';
+        }
+
+        function saveEdit(id) {
+            const row = document.getElementById('row-' + id);
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = '/admin/contacts/edit/' + id;
+            row.querySelectorAll('.edit-field').forEach(input => {
+                const hidden = document.createElement('input');
+                hidden.type = 'hidden';
+                hidden.name = input.dataset.field;
+                hidden.value = input.value;
+                form.appendChild(hidden);
+            });
+            document.body.appendChild(form);
+            form.submit();
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>{{ settings.entreprise_nom }} - Accueil</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <style>
+        :root {
+            --color-primary: {{ settings.color_primary }};
+            --color-secondary: {{ settings.color_secondary }};
+            --color-background: {{ settings.color_background }};
+            --color-text: {{ settings.color_text }};
+            --color-button: {{ settings.color_button }};
+            --color-button-text: {{ settings.color_button_text }};
+        }
+        body { background: var(--color-background); color: var(--color-text); }
+        .kiosk-header h1 { color: var(--color-primary); }
+        .search-input:focus { border-color: var(--color-primary); }
+        .contact-btn { background: var(--color-secondary); color: var(--color-text); }
+        .contact-btn:hover { border-color: var(--color-primary); }
+        .top-btn { background: var(--color-button); color: var(--color-button-text); }
+        .btn-confirm { background: var(--color-button); }
+    </style>
+</head>
+<body class="kiosk-body">
+
+    <div class="kiosk-header">
+        <h1>{{ settings.entreprise_nom }}</h1>
+        <p>Recherchez votre contact</p>
+    </div>
+
+    <div class="search-section">
+        <input type="text" class="search-input" id="searchInput"
+               placeholder="Tapez un nom ou un prenom..."
+               autocomplete="off" autofocus>
+    </div>
+
+    <div class="results-section" id="resultsSection" style="display:none;">
+        <ul class="results-list" id="resultsList"></ul>
+    </div>
+
+    <div class="top-section" id="topSection">
+        <h2>Contacts frequents</h2>
+        <div class="top-grid" id="topGrid">
+            {% for c in top_contacts %}
+            <button class="top-btn" onclick="confirmAnnounce({{ c.id }}, '{{ c.prenom }}', '{{ c.nom }}')">
+                {{ c.prenom }} {{ c.nom }}
+            </button>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- Confirmation modal -->
+    <div class="modal-overlay" id="confirmModal">
+        <div class="modal-box">
+            <h2>Confirmer l'appel</h2>
+            <p id="confirmText"></p>
+            <div class="modal-actions">
+                <button class="btn-cancel" onclick="closeModal()">Annuler</button>
+                <button class="btn-confirm" id="confirmBtn" onclick="doAnnounce()"
+                        style="background: var(--color-button); color: var(--color-button-text);">
+                    Confirmer
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Success feedback -->
+    <div class="success-overlay" id="successOverlay">
+        <div class="success-box">
+            <div class="checkmark">&#10004;</div>
+            <p id="successText">Annonce en cours...</p>
+        </div>
+    </div>
+
+    <a href="/admin/login" class="admin-link">Admin</a>
+
+    <script>
+        let selectedContactId = null;
+        let searchTimeout = null;
+        const searchInput = document.getElementById('searchInput');
+        const resultsSection = document.getElementById('resultsSection');
+        const resultsList = document.getElementById('resultsList');
+        const topSection = document.getElementById('topSection');
+
+        searchInput.addEventListener('input', function() {
+            clearTimeout(searchTimeout);
+            const q = this.value.trim();
+            if (q.length < 1) {
+                resultsSection.style.display = 'none';
+                topSection.style.display = 'block';
+                return;
+            }
+            searchTimeout = setTimeout(() => searchContacts(q), 200);
+        });
+
+        async function searchContacts(q) {
+            const resp = await fetch('/api/contacts/search?q=' + encodeURIComponent(q));
+            const contacts = await resp.json();
+            resultsList.innerHTML = '';
+            if (contacts.length === 0) {
+                resultsList.innerHTML = '<li style="padding:20px; text-align:center; font-size:1.2rem; color:#999;">Aucun resultat</li>';
+            } else {
+                contacts.forEach(c => {
+                    const li = document.createElement('li');
+                    li.innerHTML = `<button class="contact-btn" onclick="confirmAnnounce(${c.id}, '${escapeHtml(c.prenom)}', '${escapeHtml(c.nom)}')">
+                        <div class="contact-name">${escapeHtml(c.prenom)} ${escapeHtml(c.nom)}</div>
+                    </button>`;
+                    resultsList.appendChild(li);
+                });
+            }
+            resultsSection.style.display = 'block';
+            topSection.style.display = 'none';
+        }
+
+        function confirmAnnounce(id, prenom, nom) {
+            selectedContactId = id;
+            document.getElementById('confirmText').textContent =
+                `Appeler ${prenom} ${nom} a l'accueil ?`;
+            document.getElementById('confirmModal').classList.add('active');
+        }
+
+        function closeModal() {
+            document.getElementById('confirmModal').classList.remove('active');
+            selectedContactId = null;
+        }
+
+        async function doAnnounce() {
+            if (!selectedContactId) return;
+            closeModal();
+
+            const overlay = document.getElementById('successOverlay');
+            overlay.classList.add('active');
+
+            try {
+                const resp = await fetch('/api/announce/' + selectedContactId, { method: 'POST' });
+                const data = await resp.json();
+                document.getElementById('successText').textContent = data.message;
+            } catch (e) {
+                document.getElementById('successText').textContent = 'Erreur lors de l\'annonce';
+            }
+
+            setTimeout(() => {
+                overlay.classList.remove('active');
+                searchInput.value = '';
+                resultsSection.style.display = 'none';
+                topSection.style.display = 'block';
+            }, 4000);
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Reset to home after 30s of inactivity
+        let inactivityTimer;
+        function resetInactivity() {
+            clearTimeout(inactivityTimer);
+            inactivityTimer = setTimeout(() => {
+                searchInput.value = '';
+                resultsSection.style.display = 'none';
+                topSection.style.display = 'block';
+                closeModal();
+                document.getElementById('successOverlay').classList.remove('active');
+            }, 30000);
+        }
+        document.addEventListener('touchstart', resetInactivity);
+        document.addEventListener('click', resetInactivity);
+        document.addEventListener('keydown', resetInactivity);
+        resetInactivity();
+    </script>
+</body>
+</html>

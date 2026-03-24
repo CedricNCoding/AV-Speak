@@ -1,0 +1,488 @@
+/* === AV-Speak - Styles === */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    min-height: 100vh;
+}
+
+/* --- Kiosk (ecran tactile) --- */
+.kiosk-body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100vh;
+    padding: 20px;
+    touch-action: manipulation;
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+.kiosk-header {
+    text-align: center;
+    padding: 30px 0 20px;
+    width: 100%;
+}
+
+.kiosk-header h1 {
+    font-size: 2.5rem;
+    font-weight: 700;
+}
+
+.kiosk-header p {
+    font-size: 1.2rem;
+    margin-top: 8px;
+    opacity: 0.8;
+}
+
+/* Search */
+.search-section {
+    width: 100%;
+    max-width: 700px;
+    margin: 20px auto;
+}
+
+.search-input {
+    width: 100%;
+    padding: 20px 25px;
+    font-size: 1.5rem;
+    border: 3px solid #ddd;
+    border-radius: 15px;
+    outline: none;
+    transition: border-color 0.2s;
+}
+
+.search-input:focus {
+    border-color: var(--color-primary);
+}
+
+/* Results */
+.results-section {
+    width: 100%;
+    max-width: 700px;
+    margin-top: 15px;
+}
+
+.results-list {
+    list-style: none;
+}
+
+.contact-btn {
+    display: block;
+    width: 100%;
+    padding: 22px 25px;
+    margin: 8px 0;
+    font-size: 1.4rem;
+    border: 2px solid #e0e0e0;
+    border-radius: 12px;
+    cursor: pointer;
+    text-align: left;
+    transition: all 0.15s;
+    font-weight: 500;
+}
+
+.contact-btn:hover,
+.contact-btn:active {
+    transform: scale(1.02);
+    box-shadow: 0 4px 15px rgba(0,0,0,0.15);
+}
+
+.contact-btn .contact-name {
+    font-weight: 700;
+}
+
+.contact-btn .contact-detail {
+    font-size: 0.9rem;
+    opacity: 0.7;
+    margin-top: 4px;
+}
+
+/* Top contacts */
+.top-section {
+    width: 100%;
+    max-width: 700px;
+    margin-top: 30px;
+}
+
+.top-section h2 {
+    font-size: 1.3rem;
+    margin-bottom: 15px;
+    opacity: 0.7;
+}
+
+.top-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+}
+
+.top-btn {
+    padding: 25px 20px;
+    font-size: 1.3rem;
+    border: 2px solid #e0e0e0;
+    border-radius: 12px;
+    cursor: pointer;
+    text-align: center;
+    font-weight: 600;
+    transition: all 0.15s;
+}
+
+.top-btn:hover,
+.top-btn:active {
+    transform: scale(1.03);
+    box-shadow: 0 4px 15px rgba(0,0,0,0.15);
+}
+
+/* Confirmation modal */
+.modal-overlay {
+    display: none;
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+}
+
+.modal-overlay.active {
+    display: flex;
+}
+
+.modal-box {
+    background: white;
+    border-radius: 20px;
+    padding: 50px;
+    text-align: center;
+    max-width: 550px;
+    width: 90%;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+}
+
+.modal-box h2 {
+    font-size: 1.8rem;
+    margin-bottom: 10px;
+}
+
+.modal-box p {
+    font-size: 1.3rem;
+    margin-bottom: 35px;
+    color: #555;
+}
+
+.modal-actions {
+    display: flex;
+    gap: 15px;
+    justify-content: center;
+}
+
+.modal-actions button {
+    padding: 18px 40px;
+    font-size: 1.3rem;
+    border-radius: 12px;
+    border: none;
+    cursor: pointer;
+    font-weight: 600;
+    min-width: 150px;
+}
+
+.btn-confirm {
+    color: white;
+}
+
+.btn-cancel {
+    background: #e0e0e0;
+    color: #333;
+}
+
+/* Success feedback */
+.success-overlay {
+    display: none;
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.7);
+    z-index: 2000;
+    align-items: center;
+    justify-content: center;
+}
+
+.success-overlay.active {
+    display: flex;
+}
+
+.success-box {
+    background: white;
+    border-radius: 20px;
+    padding: 60px;
+    text-align: center;
+}
+
+.success-box .checkmark {
+    font-size: 5rem;
+    color: #4CAF50;
+}
+
+.success-box p {
+    font-size: 1.5rem;
+    margin-top: 15px;
+    color: #333;
+}
+
+/* Admin link */
+.admin-link {
+    position: fixed;
+    bottom: 10px;
+    right: 15px;
+    font-size: 0.8rem;
+    opacity: 0.3;
+    text-decoration: none;
+    color: inherit;
+}
+
+/* --- Admin --- */
+.admin-body {
+    padding: 20px 40px;
+    max-width: 1100px;
+    margin: 0 auto;
+}
+
+.admin-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px 0;
+    border-bottom: 2px solid #eee;
+    margin-bottom: 30px;
+}
+
+.admin-header h1 {
+    font-size: 1.8rem;
+}
+
+.admin-nav a {
+    margin-left: 15px;
+    text-decoration: none;
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-weight: 500;
+}
+
+/* Tabs */
+.admin-tabs {
+    display: flex;
+    gap: 5px;
+    margin-bottom: 25px;
+    border-bottom: 2px solid #eee;
+}
+
+.admin-tab {
+    padding: 12px 24px;
+    border: none;
+    background: none;
+    cursor: pointer;
+    font-size: 1rem;
+    font-weight: 500;
+    border-bottom: 3px solid transparent;
+    color: #666;
+}
+
+.admin-tab.active {
+    border-bottom-color: var(--color-primary);
+    color: var(--color-primary);
+}
+
+.admin-panel {
+    display: none;
+}
+
+.admin-panel.active {
+    display: block;
+}
+
+/* Forms */
+.form-row {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 15px;
+    flex-wrap: wrap;
+}
+
+.form-row input, .form-row select {
+    padding: 10px 14px;
+    font-size: 1rem;
+    border: 2px solid #ddd;
+    border-radius: 8px;
+    flex: 1;
+    min-width: 150px;
+}
+
+.btn {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 1rem;
+    font-weight: 500;
+}
+
+.btn-primary {
+    color: white;
+}
+
+.btn-danger {
+    background: #e53935;
+    color: white;
+}
+
+.btn-small {
+    padding: 6px 12px;
+    font-size: 0.85rem;
+}
+
+/* Table */
+.contacts-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 20px;
+}
+
+.contacts-table th,
+.contacts-table td {
+    padding: 12px 15px;
+    text-align: left;
+    border-bottom: 1px solid #eee;
+}
+
+.contacts-table th {
+    font-weight: 600;
+    color: #666;
+    font-size: 0.9rem;
+    text-transform: uppercase;
+}
+
+.contacts-table tr:hover {
+    background: #f9f9f9;
+}
+
+/* Settings */
+.settings-group {
+    margin-bottom: 25px;
+}
+
+.settings-group h3 {
+    margin-bottom: 12px;
+    color: #444;
+}
+
+.color-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 10px;
+}
+
+.color-row label {
+    min-width: 180px;
+    font-weight: 500;
+}
+
+.color-row input[type="color"] {
+    width: 50px;
+    height: 38px;
+    border: 2px solid #ddd;
+    border-radius: 8px;
+    cursor: pointer;
+    padding: 2px;
+}
+
+.color-row input[type="text"] {
+    padding: 8px 12px;
+    border: 2px solid #ddd;
+    border-radius: 8px;
+    font-size: 1rem;
+    width: 300px;
+}
+
+/* Login */
+.login-body {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+}
+
+.login-box {
+    background: white;
+    padding: 50px;
+    border-radius: 16px;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+    width: 100%;
+    max-width: 420px;
+}
+
+.login-box h1 {
+    text-align: center;
+    margin-bottom: 30px;
+    font-size: 1.6rem;
+}
+
+.login-box input {
+    width: 100%;
+    padding: 14px 16px;
+    font-size: 1.1rem;
+    border: 2px solid #ddd;
+    border-radius: 10px;
+    margin-bottom: 15px;
+}
+
+.login-box button {
+    width: 100%;
+    padding: 14px;
+    font-size: 1.1rem;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    font-weight: 600;
+    color: white;
+}
+
+.login-error {
+    background: #ffebee;
+    color: #c62828;
+    padding: 12px;
+    border-radius: 8px;
+    margin-bottom: 15px;
+    text-align: center;
+}
+
+/* CSV import */
+.import-section {
+    margin-top: 25px;
+    padding: 20px;
+    background: #f9f9f9;
+    border-radius: 12px;
+}
+
+.import-section h3 {
+    margin-bottom: 10px;
+}
+
+.import-section input[type="file"] {
+    margin-right: 10px;
+}
+
+/* Responsive */
+@media (max-width: 600px) {
+    .top-grid {
+        grid-template-columns: 1fr;
+    }
+    .admin-body {
+        padding: 10px 15px;
+    }
+    .form-row {
+        flex-direction: column;
+    }
+}

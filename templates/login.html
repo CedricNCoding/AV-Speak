@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Administration - Connexion</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <style>
+        :root { --color-primary: {{ settings.color_primary }}; }
+        body { background: #f0f2f5; }
+        .login-box button { background: var(--color-primary); }
+    </style>
+</head>
+<body class="login-body">
+    <div class="login-box">
+        <h1>Administration</h1>
+        {% if error %}
+        <div class="login-error">{{ error }}</div>
+        {% endif %}
+        <form method="POST" action="/admin/login">
+            <input type="text" name="username" placeholder="Identifiant" required>
+            <input type="password" name="password" placeholder="Mot de passe" required>
+            <button type="submit">Se connecter</button>
+        </form>
+    </div>
+</body>
+</html>

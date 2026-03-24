@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+venv/
+av_speak.db
+tts_cache/
+piper/
+*.wav
+.env

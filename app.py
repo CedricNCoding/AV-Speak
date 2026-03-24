@@ -10,7 +10,7 @@ from fastapi import FastAPI, Request, Form, Depends, HTTPException, status
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from passlib.hash import bcrypt
+import bcrypt as _bcrypt
 from pydantic import BaseModel
 
 # --- Configuration ---
@@ -63,7 +63,7 @@ def init_db():
     # Create default admin if not exists
     existing = conn.execute("SELECT id FROM users WHERE username = 'admin'").fetchone()
     if not existing:
-        pw_hash = bcrypt.hash("admin")
+        pw_hash = _bcrypt.hashpw("admin".encode(), _bcrypt.gensalt()).decode()
         conn.execute("INSERT INTO users (username, password_hash) VALUES (?, ?)", ("admin", pw_hash))
     # Default color settings
     defaults = {
@@ -233,7 +233,7 @@ async def admin_login(request: Request, username: str = Form(...), password: str
     settings = get_settings(conn)
     user = conn.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
     conn.close()
-    if not user or not bcrypt.verify(password, user["password_hash"]):
+    if not user or not _bcrypt.checkpw(password.encode(), user["password_hash"].encode()):
         return templates.TemplateResponse("login.html", {
             "request": request, "settings": settings, "error": "Identifiants incorrects"
         })
@@ -341,10 +341,10 @@ async def admin_change_password(
     username = require_auth(request)
     conn = get_db()
     user = conn.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
-    if not bcrypt.verify(current_password, user["password_hash"]):
+    if not _bcrypt.checkpw(current_password.encode(), user["password_hash"].encode()):
         conn.close()
         raise HTTPException(status_code=400, detail="Mot de passe actuel incorrect")
-    new_hash = bcrypt.hash(new_password)
+    new_hash = _bcrypt.hashpw(new_password.encode(), _bcrypt.gensalt()).decode()
     conn.execute("UPDATE users SET password_hash = ? WHERE username = ?", (new_hash, username))
     conn.commit()
     conn.close()

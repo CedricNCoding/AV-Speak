@@ -26,6 +26,9 @@
 <body class="kiosk-body">
 
     <div class="kiosk-header">
+        {% if settings.logo_url %}
+        <img src="{{ settings.logo_url }}" alt="Logo" style="max-height:100px; max-width:300px; margin-bottom:10px;">
+        {% endif %}
         <h1>{{ settings.entreprise_nom }}</h1>
         <p>Recherchez votre contact</p>
     </div>

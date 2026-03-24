@@ -2,6 +2,10 @@ import os
 import sqlite3
 import subprocess
 import secrets
+import smtplib
+import threading
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from pathlib import Path
 
 from fastapi import FastAPI, Request, Form, Depends, HTTPException, status
@@ -49,7 +53,7 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             nom TEXT NOT NULL,
             prenom TEXT NOT NULL,
-            civilite TEXT DEFAULT 'M',
+            civilite TEXT DEFAULT 'X' NOT NULL,
             email TEXT DEFAULT '',
             telephone TEXT DEFAULT '',
             call_count INTEGER DEFAULT 0
@@ -62,7 +66,7 @@ def init_db():
     # Migration: add civilite column if missing
     columns = [row[1] for row in conn.execute("PRAGMA table_info(contacts)").fetchall()]
     if "civilite" not in columns:
-        conn.execute("ALTER TABLE contacts ADD COLUMN civilite TEXT DEFAULT 'M'")
+        conn.execute("ALTER TABLE contacts ADD COLUMN civilite TEXT DEFAULT 'X' NOT NULL")
     # Create default admin if not exists
     existing = conn.execute("SELECT id FROM users WHERE username = 'admin'").fetchone()
     if not existing:
@@ -78,6 +82,28 @@ def init_db():
         "color_button_text": "#ffffff",
         "entreprise_nom": "Accueil",
         "phrase_accueil": "{civilite} {prenom} {nom} est demande a l'accueil",
+        "logo_url": "",
+        # SMTP
+        "smtp_enabled": "0",
+        "smtp_host": "",
+        "smtp_port": "587",
+        "smtp_user": "",
+        "smtp_password": "",
+        "smtp_from": "",
+        "smtp_tls": "1",
+        "email_subject": "Visite de {civilite} {prenom} {nom}",
+        "email_body": "Bonjour,\n\n{civilite} {prenom} {nom} vous attend a l'accueil.\n\nCordialement,\n{entreprise}",
+        # OVH SMS
+        "sms_enabled": "0",
+        "ovh_endpoint": "ovh-eu",
+        "ovh_app_key": "",
+        "ovh_app_secret": "",
+        "ovh_consumer_key": "",
+        "ovh_sms_service": "",
+        "ovh_sms_sender": "",
+        "sms_body": "{civilite} {prenom} {nom} vous attend a l'accueil.",
+        # Notifications
+        "notif_on_announce": "1",
     }
     for key, value in defaults.items():
         conn.execute(
@@ -132,6 +158,101 @@ def generate_tts(texte: str) -> str | None:
             return None
 
     return filename
+
+
+# --- Email sending ---
+
+def send_email(settings: dict, contact: dict, civilite: str):
+    """Send notification email to the contact."""
+    if settings.get("smtp_enabled") != "1":
+        return
+    email_to = contact["email"]
+    if not email_to:
+        return
+
+    try:
+        subject = settings["email_subject"].format(
+            civilite=civilite, prenom=contact["prenom"],
+            nom=contact["nom"], entreprise=settings.get("entreprise_nom", "")
+        ).strip()
+        body = settings["email_body"].format(
+            civilite=civilite, prenom=contact["prenom"],
+            nom=contact["nom"], entreprise=settings.get("entreprise_nom", "")
+        ).strip()
+
+        msg = MIMEMultipart()
+        msg["From"] = settings["smtp_from"]
+        msg["To"] = email_to
+        msg["Subject"] = subject
+        msg.attach(MIMEText(body, "plain", "utf-8"))
+
+        port = int(settings.get("smtp_port", 587))
+        if settings.get("smtp_tls") == "1":
+            server = smtplib.SMTP(settings["smtp_host"], port, timeout=10)
+            server.starttls()
+        else:
+            server = smtplib.SMTP(settings["smtp_host"], port, timeout=10)
+
+        if settings.get("smtp_user"):
+            server.login(settings["smtp_user"], settings["smtp_password"])
+        server.send_message(msg)
+        server.quit()
+        print(f"Email envoye a {email_to}")
+    except Exception as e:
+        print(f"Erreur envoi email: {e}")
+
+
+# --- OVH SMS sending ---
+
+def send_sms(settings: dict, contact: dict, civilite: str):
+    """Send notification SMS via OVH API."""
+    if settings.get("sms_enabled") != "1":
+        return
+    phone = contact["telephone"]
+    if not phone:
+        return
+
+    try:
+        import ovh
+        client = ovh.Client(
+            endpoint=settings.get("ovh_endpoint", "ovh-eu"),
+            application_key=settings["ovh_app_key"],
+            application_secret=settings["ovh_app_secret"],
+            consumer_key=settings["ovh_consumer_key"],
+        )
+
+        body = settings["sms_body"].format(
+            civilite=civilite, prenom=contact["prenom"],
+            nom=contact["nom"], entreprise=settings.get("entreprise_nom", "")
+        ).strip()
+
+        service = settings["ovh_sms_service"]
+        sender = settings.get("ovh_sms_sender", "")
+
+        params = {
+            "charset": "UTF-8",
+            "message": body,
+            "noStopClause": True,
+            "priority": "high",
+            "receivers": [phone],
+            "senderForResponse": True,
+        }
+        if sender:
+            params["sender"] = sender
+            params["senderForResponse"] = False
+
+        client.post(f"/sms/{service}/jobs", **params)
+        print(f"SMS envoye a {phone}")
+    except Exception as e:
+        print(f"Erreur envoi SMS: {e}")
+
+
+def send_notifications(settings: dict, contact: dict, civilite: str):
+    """Send email and SMS in background threads."""
+    if settings.get("notif_on_announce") != "1":
+        return
+    threading.Thread(target=send_email, args=(settings, dict(contact), civilite)).start()
+    threading.Thread(target=send_sms, args=(settings, dict(contact), civilite)).start()
 
 
 # --- Routes: Kiosk (Frontend tactile) ---
@@ -196,7 +317,7 @@ async def announce(contact_id: int):
     settings = get_settings(conn)
     conn.close()
 
-    civilite_map = {"M": "Monsieur", "Mme": "Madame", "": ""}
+    civilite_map = {"M": "Monsieur", "Mme": "Madame", "X": ""}
     civilite = civilite_map.get(contact["civilite"], "")
 
     phrase_template = settings.get("phrase_accueil", "{civilite} {prenom} {nom} est demande a l'accueil")
@@ -210,6 +331,8 @@ async def announce(contact_id: int):
         texte = texte.replace("  ", " ")
 
     audio_file = generate_tts(texte)
+
+    send_notifications(settings, contact, civilite)
 
     return {
         "status": "ok",
@@ -334,10 +457,55 @@ async def admin_update_settings(request: Request):
     form = await request.form()
     conn = get_db()
     for key in ("color_primary", "color_secondary", "color_background", "color_text",
-                "color_button", "color_button_text", "entreprise_nom", "phrase_accueil"):
+                "color_button", "color_button_text", "entreprise_nom", "phrase_accueil",
+                "smtp_enabled", "smtp_host", "smtp_port", "smtp_user", "smtp_password",
+                "smtp_from", "smtp_tls", "email_subject", "email_body",
+                "sms_enabled", "ovh_endpoint", "ovh_app_key", "ovh_app_secret",
+                "ovh_consumer_key", "ovh_sms_service", "ovh_sms_sender", "sms_body",
+                "notif_on_announce"):
         value = form.get(key)
         if value is not None:
             conn.execute("UPDATE settings SET value = ? WHERE key = ?", (value.strip(), key))
+    conn.commit()
+    conn.close()
+    return RedirectResponse(url="/admin", status_code=303)
+
+
+@app.post("/admin/logo")
+async def admin_upload_logo(request: Request):
+    require_auth(request)
+    form = await request.form()
+    file = form.get("logo_file")
+    if not file or not file.filename:
+        return RedirectResponse(url="/admin", status_code=303)
+
+    ext = Path(file.filename).suffix.lower()
+    if ext not in (".png", ".jpg", ".jpeg", ".svg", ".webp"):
+        raise HTTPException(status_code=400, detail="Format non supporte (png, jpg, svg, webp)")
+
+    content = await file.read()
+    logo_path = BASE_DIR / "static" / f"logo{ext}"
+    # Remove old logos
+    for old in (BASE_DIR / "static").glob("logo.*"):
+        old.unlink()
+    logo_path.write_bytes(content)
+
+    conn = get_db()
+    conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+                 ("logo_url", f"/static/logo{ext}"))
+    conn.commit()
+    conn.close()
+    return RedirectResponse(url="/admin", status_code=303)
+
+
+@app.post("/admin/logo/delete")
+async def admin_delete_logo(request: Request):
+    require_auth(request)
+    for old in (BASE_DIR / "static").glob("logo.*"):
+        old.unlink()
+    conn = get_db()
+    conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+                 ("logo_url", ""))
     conn.commit()
     conn.close()
     return RedirectResponse(url="/admin", status_code=303)
@@ -360,6 +528,40 @@ async def admin_change_password(
     conn.commit()
     conn.close()
     return RedirectResponse(url="/admin", status_code=303)
+
+
+@app.post("/admin/test-email")
+async def admin_test_email(request: Request):
+    require_auth(request)
+    conn = get_db()
+    settings = get_settings(conn)
+    conn.close()
+    test_contact = {"prenom": "Test", "nom": "Utilisateur", "civilite": "M",
+                    "email": settings.get("smtp_from", ""), "telephone": ""}
+    try:
+        send_email(settings, test_contact, "Monsieur")
+        return JSONResponse({"status": "ok", "message": "Email de test envoye a " + test_contact["email"]})
+    except Exception as e:
+        return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
+
+
+@app.post("/admin/test-sms")
+async def admin_test_sms(request: Request):
+    require_auth(request)
+    form = await request.form()
+    phone = form.get("test_phone", "")
+    if not phone:
+        return JSONResponse({"status": "error", "message": "Numero de telephone requis"}, status_code=400)
+    conn = get_db()
+    settings = get_settings(conn)
+    conn.close()
+    test_contact = {"prenom": "Test", "nom": "Utilisateur", "civilite": "M",
+                    "email": "", "telephone": phone}
+    try:
+        send_sms(settings, test_contact, "Monsieur")
+        return JSONResponse({"status": "ok", "message": "SMS de test envoye a " + phone})
+    except Exception as e:
+        return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
 
 
 # --- CSV Import ---
@@ -386,7 +588,7 @@ async def admin_import_contacts(request: Request):
         email = row.get("email", row.get("Email", row.get("Mail", ""))).strip()
         telephone = row.get("telephone", row.get("Telephone", row.get("Téléphone", row.get("Tel", "")))).strip()
         civilite = row.get("civilite", row.get("Civilite", row.get("Civilité", row.get("Genre", "M")))).strip()
-        if civilite not in ("M", "Mme", ""):
+        if civilite not in ("M", "Mme", "X"):
             civilite = "M"
         if nom and prenom:
             conn.execute(

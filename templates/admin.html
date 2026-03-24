@@ -23,6 +23,7 @@
     <div class="admin-tabs">
         <button class="admin-tab active" onclick="showTab('contacts')">Contacts</button>
         <button class="admin-tab" onclick="showTab('settings')">Apparence</button>
+        <button class="admin-tab" onclick="showTab('notifications')">Notifications</button>
         <button class="admin-tab" onclick="showTab('password')">Mot de passe</button>
     </div>
 
@@ -34,7 +35,7 @@
                 <select name="civilite" style="flex:0 0 130px;">
                     <option value="M">Monsieur</option>
                     <option value="Mme">Madame</option>
-                    <option value="">Non precise</option>
+                    <option value="X" selected>Non precise</option>
                 </select>
                 <input type="text" name="nom" placeholder="Nom" required>
                 <input type="text" name="prenom" placeholder="Prenom" required>
@@ -71,11 +72,11 @@
                 {% for c in contacts %}
                 <tr id="row-{{ c.id }}">
                     <td>
-                        <span class="display-field">{% if c.civilite == 'M' %}M.{% elif c.civilite == 'Mme' %}Mme{% else %}-{% endif %}</span>
+                        <span class="display-field">{% if c.civilite == 'M' %}M.{% elif c.civilite == 'Mme' %}Mme{% else %}—{% endif %}</span>
                         <select class="edit-field" style="display:none; width:100%;" data-field="civilite">
                             <option value="M" {% if c.civilite == 'M' %}selected{% endif %}>Monsieur</option>
                             <option value="Mme" {% if c.civilite == 'Mme' %}selected{% endif %}>Madame</option>
-                            <option value="" {% if c.civilite == '' %}selected{% endif %}>Non precise</option>
+                            <option value="" {% if c.civilite == 'X' %}selected{% endif %}>Non precise</option>
                         </select>
                     </td>
                     <td>
@@ -112,6 +113,25 @@
     <!-- Settings panel -->
     <div class="admin-panel" id="panel-settings">
         <h2>Apparence du kiosk</h2>
+
+        <!-- Logo upload (separate form for file upload) -->
+        <div class="settings-group" style="padding:20px; background:#f9f9f9; border-radius:12px; margin-bottom:20px;">
+            <h3>Logo de l'entreprise</h3>
+            {% if settings.logo_url %}
+            <div style="margin:10px 0;">
+                <img src="{{ settings.logo_url }}" alt="Logo actuel" style="max-height:80px; max-width:250px; border:1px solid #ddd; border-radius:8px; padding:5px;">
+            </div>
+            <form method="POST" action="/admin/logo/delete" style="display:inline;">
+                <button type="submit" class="btn btn-small btn-danger">Supprimer le logo</button>
+            </form>
+            {% endif %}
+            <form method="POST" action="/admin/logo" enctype="multipart/form-data" style="margin-top:10px;">
+                <input type="file" name="logo_file" accept=".png,.jpg,.jpeg,.svg,.webp" required>
+                <button type="submit" class="btn btn-small btn-primary">Envoyer</button>
+            </form>
+            <p style="font-size:0.85rem; color:#888; margin-top:5px;">Formats acceptes : PNG, JPG, SVG, WebP</p>
+        </div>
+
         <form method="POST" action="/admin/settings">
             <div class="settings-group">
                 <h3>Nom de l'entreprise</h3>
@@ -174,6 +194,141 @@
         </div>
     </div>
 
+    <!-- Notifications panel -->
+    <div class="admin-panel" id="panel-notifications">
+        <form method="POST" action="/admin/settings">
+
+            <!-- General -->
+            <div class="settings-group">
+                <h3>Notifications</h3>
+                <div class="color-row">
+                    <label>Envoyer lors d'une annonce</label>
+                    <select name="notif_on_announce" style="width:100px;">
+                        <option value="1" {% if settings.notif_on_announce == '1' %}selected{% endif %}>Oui</option>
+                        <option value="0" {% if settings.notif_on_announce == '0' %}selected{% endif %}>Non</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- SMTP Email -->
+            <div class="settings-group" style="padding:20px; background:#f9f9f9; border-radius:12px;">
+                <h3>Email (SMTP)</h3>
+                <div class="color-row">
+                    <label>Activer l'envoi d'emails</label>
+                    <select name="smtp_enabled" style="width:100px;">
+                        <option value="1" {% if settings.smtp_enabled == '1' %}selected{% endif %}>Oui</option>
+                        <option value="0" {% if settings.smtp_enabled == '0' %}selected{% endif %}>Non</option>
+                    </select>
+                </div>
+                <div class="color-row">
+                    <label>Serveur SMTP</label>
+                    <input type="text" name="smtp_host" value="{{ settings.smtp_host }}" placeholder="smtp.gmail.com">
+                </div>
+                <div class="color-row">
+                    <label>Port</label>
+                    <input type="text" name="smtp_port" value="{{ settings.smtp_port }}" placeholder="587" style="width:100px;">
+                </div>
+                <div class="color-row">
+                    <label>TLS</label>
+                    <select name="smtp_tls" style="width:100px;">
+                        <option value="1" {% if settings.smtp_tls == '1' %}selected{% endif %}>Oui</option>
+                        <option value="0" {% if settings.smtp_tls == '0' %}selected{% endif %}>Non</option>
+                    </select>
+                </div>
+                <div class="color-row">
+                    <label>Identifiant</label>
+                    <input type="text" name="smtp_user" value="{{ settings.smtp_user }}" placeholder="user@gmail.com">
+                </div>
+                <div class="color-row">
+                    <label>Mot de passe</label>
+                    <input type="password" name="smtp_password" value="{{ settings.smtp_password }}">
+                </div>
+                <div class="color-row">
+                    <label>Adresse expediteur</label>
+                    <input type="text" name="smtp_from" value="{{ settings.smtp_from }}" placeholder="accueil@entreprise.com">
+                </div>
+
+                <h4 style="margin-top:20px; margin-bottom:10px;">Modele d'email</h4>
+                <p style="font-size:0.85rem; color:#888; margin-bottom:10px;">
+                    Blocs disponibles : <strong>{civilite}</strong>, <strong>{nom}</strong>, <strong>{prenom}</strong>, <strong>{entreprise}</strong>
+                </p>
+                <div class="color-row">
+                    <label>Objet</label>
+                    <input type="text" name="email_subject" value="{{ settings.email_subject }}" style="width:100%; max-width:500px;">
+                </div>
+                <div style="margin-top:8px;">
+                    <label style="display:block; margin-bottom:5px; font-weight:500;">Corps du mail</label>
+                    <textarea name="email_body" rows="6"
+                        style="width:100%; max-width:500px; padding:10px; font-size:1rem; border:2px solid #ddd; border-radius:8px; font-family:inherit;">{{ settings.email_body }}</textarea>
+                </div>
+
+                <div style="margin-top:15px;">
+                    <button type="button" class="btn btn-primary btn-small" onclick="testEmail()">Tester l'envoi email</button>
+                    <span id="email-test-result" style="margin-left:10px; font-size:0.9rem;"></span>
+                </div>
+            </div>
+
+            <!-- OVH SMS -->
+            <div class="settings-group" style="padding:20px; background:#f9f9f9; border-radius:12px; margin-top:20px;">
+                <h3>SMS (OVH API)</h3>
+                <div class="color-row">
+                    <label>Activer l'envoi de SMS</label>
+                    <select name="sms_enabled" style="width:100px;">
+                        <option value="1" {% if settings.sms_enabled == '1' %}selected{% endif %}>Oui</option>
+                        <option value="0" {% if settings.sms_enabled == '0' %}selected{% endif %}>Non</option>
+                    </select>
+                </div>
+                <div class="color-row">
+                    <label>Endpoint OVH</label>
+                    <select name="ovh_endpoint" style="width:200px;">
+                        <option value="ovh-eu" {% if settings.ovh_endpoint == 'ovh-eu' %}selected{% endif %}>ovh-eu (Europe)</option>
+                        <option value="ovh-ca" {% if settings.ovh_endpoint == 'ovh-ca' %}selected{% endif %}>ovh-ca (Canada)</option>
+                    </select>
+                </div>
+                <div class="color-row">
+                    <label>Application Key</label>
+                    <input type="text" name="ovh_app_key" value="{{ settings.ovh_app_key }}">
+                </div>
+                <div class="color-row">
+                    <label>Application Secret</label>
+                    <input type="password" name="ovh_app_secret" value="{{ settings.ovh_app_secret }}">
+                </div>
+                <div class="color-row">
+                    <label>Consumer Key</label>
+                    <input type="password" name="ovh_consumer_key" value="{{ settings.ovh_consumer_key }}">
+                </div>
+                <div class="color-row">
+                    <label>Nom du service SMS</label>
+                    <input type="text" name="ovh_sms_service" value="{{ settings.ovh_sms_service }}" placeholder="sms-xxx">
+                </div>
+                <div class="color-row">
+                    <label>Expediteur (optionnel)</label>
+                    <input type="text" name="ovh_sms_sender" value="{{ settings.ovh_sms_sender }}" placeholder="MonEntreprise">
+                </div>
+
+                <h4 style="margin-top:20px; margin-bottom:10px;">Modele de SMS</h4>
+                <p style="font-size:0.85rem; color:#888; margin-bottom:10px;">
+                    Blocs disponibles : <strong>{civilite}</strong>, <strong>{nom}</strong>, <strong>{prenom}</strong>, <strong>{entreprise}</strong>
+                </p>
+                <div style="margin-top:8px;">
+                    <label style="display:block; margin-bottom:5px; font-weight:500;">Texte du SMS</label>
+                    <textarea name="sms_body" rows="3"
+                        style="width:100%; max-width:500px; padding:10px; font-size:1rem; border:2px solid #ddd; border-radius:8px; font-family:inherit;">{{ settings.sms_body }}</textarea>
+                </div>
+
+                <div style="margin-top:15px;">
+                    <input type="text" id="test-phone" placeholder="+33612345678" style="padding:8px; border:2px solid #ddd; border-radius:8px; width:180px;">
+                    <button type="button" class="btn btn-primary btn-small" onclick="testSms()">Tester l'envoi SMS</button>
+                    <span id="sms-test-result" style="margin-left:10px; font-size:0.9rem;"></span>
+                </div>
+            </div>
+
+            <div style="margin-top:20px;">
+                <button type="submit" class="btn btn-primary">Enregistrer les parametres</button>
+            </div>
+        </form>
+    </div>
+
     <!-- Password panel -->
     <div class="admin-panel" id="panel-password">
         <h2>Changer le mot de passe</h2>
@@ -223,6 +378,40 @@
             });
             document.body.appendChild(form);
             form.submit();
+        }
+
+        async function testEmail() {
+            const result = document.getElementById('email-test-result');
+            result.textContent = 'Envoi en cours...';
+            result.style.color = '#666';
+            try {
+                const resp = await fetch('/admin/test-email', { method: 'POST' });
+                const data = await resp.json();
+                result.textContent = data.message;
+                result.style.color = data.status === 'ok' ? '#4CAF50' : '#e53935';
+            } catch (e) {
+                result.textContent = 'Erreur de connexion';
+                result.style.color = '#e53935';
+            }
+        }
+
+        async function testSms() {
+            const phone = document.getElementById('test-phone').value;
+            if (!phone) { alert('Entrez un numero de telephone'); return; }
+            const result = document.getElementById('sms-test-result');
+            result.textContent = 'Envoi en cours...';
+            result.style.color = '#666';
+            try {
+                const formData = new FormData();
+                formData.append('test_phone', phone);
+                const resp = await fetch('/admin/test-sms', { method: 'POST', body: formData });
+                const data = await resp.json();
+                result.textContent = data.message;
+                result.style.color = data.status === 'ok' ? '#4CAF50' : '#e53935';
+            } catch (e) {
+                result.textContent = 'Erreur de connexion';
+                result.style.color = '#e53935';
+            }
         }
     </script>
 </body>

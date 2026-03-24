@@ -405,7 +405,7 @@ async def admin_add_contact(
     request: Request,
     nom: str = Form(...),
     prenom: str = Form(...),
-    civilite: str = Form("M"),
+    civilite: str = Form("X"),
     email: str = Form(""),
     telephone: str = Form(""),
 ):
@@ -426,7 +426,7 @@ async def admin_edit_contact(
     contact_id: int,
     nom: str = Form(...),
     prenom: str = Form(...),
-    civilite: str = Form("M"),
+    civilite: str = Form("X"),
     email: str = Form(""),
     telephone: str = Form(""),
 ):

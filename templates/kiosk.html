@@ -138,6 +138,18 @@
                 const resp = await fetch('/api/announce/' + contactId, { method: 'POST' });
                 const data = await resp.json();
                 document.getElementById('successText').textContent = data.message;
+
+                if (data.audio_url) {
+                    const audio = new Audio(data.audio_url);
+                    audio.play();
+                    audio.onended = () => {
+                        overlay.classList.remove('active');
+                        searchInput.value = '';
+                        resultsSection.style.display = 'none';
+                        topSection.style.display = 'block';
+                    };
+                    return;
+                }
             } catch (e) {
                 document.getElementById('successText').textContent = 'Erreur lors de l\'annonce';
             }

@@ -2,12 +2,10 @@ import os
 import sqlite3
 import subprocess
 import secrets
-import threading
 from pathlib import Path
-from functools import wraps
 
 from fastapi import FastAPI, Request, Form, Depends, HTTPException, status
-from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 import bcrypt as _bcrypt
@@ -100,31 +98,10 @@ def require_auth(request: Request):
     return sessions[session_id]
 
 
-# --- Audio playback ---
+# --- TTS generation ---
 
-def play_audio(filepath: str):
-    """Play a WAV file through the default audio output."""
-    import platform
-    try:
-        system = platform.system()
-        if system == "Linux":
-            subprocess.run(["aplay", filepath], capture_output=True, timeout=30)
-        elif system == "Darwin":
-            subprocess.run(["afplay", filepath], capture_output=True, timeout=30)
-        elif system == "Windows":
-            import pygame
-            pygame.mixer.init()
-            pygame.mixer.music.load(filepath)
-            pygame.mixer.music.play()
-            while pygame.mixer.music.get_busy():
-                pygame.time.wait(100)
-            pygame.mixer.quit()
-    except Exception as e:
-        print(f"Erreur lecture audio: {e}")
-
-
-def generate_and_play_tts(texte: str):
-    """Generate TTS with Piper and play it."""
+def generate_tts(texte: str) -> str | None:
+    """Generate TTS with Piper and return the filename."""
     import hashlib
     filename = hashlib.md5(texte.encode()).hexdigest() + ".wav"
     filepath = TTS_CACHE_DIR / filename
@@ -140,16 +117,15 @@ def generate_and_play_tts(texte: str):
             )
             if result.returncode != 0:
                 print(f"Erreur Piper TTS: {result.stderr}")
-                return
+                return None
         except FileNotFoundError:
             print(f"Piper non trouvé: {PIPER_BIN}")
-            print("Installez Piper TTS. Voir DEPLOIEMENT.md")
-            return
+            return None
         except Exception as e:
             print(f"Erreur TTS: {e}")
-            return
+            return None
 
-    play_audio(str(filepath))
+    return filename
 
 
 # --- Routes: Kiosk (Frontend tactile) ---
@@ -167,6 +143,14 @@ async def kiosk(request: Request):
         "settings": settings,
         "top_contacts": top_contacts,
     })
+
+
+@app.get("/audio/{filename}")
+async def serve_audio(filename: str):
+    filepath = TTS_CACHE_DIR / filename
+    if not filepath.exists() or ".." in filename:
+        raise HTTPException(status_code=404)
+    return FileResponse(str(filepath), media_type="audio/wav")
 
 
 @app.get("/api/contacts/search")
@@ -209,11 +193,13 @@ async def announce(contact_id: int):
     civilite = "Monsieur" if not contact["prenom"].endswith(("a", "e", "ine", "elle", "ette")) else "Madame"
     texte = f"{civilite} {contact['prenom']} {contact['nom']} est demandé à l'accueil"
 
-    # Play TTS in background thread to not block the response
-    thread = threading.Thread(target=generate_and_play_tts, args=(texte,))
-    thread.start()
+    audio_file = generate_tts(texte)
 
-    return {"status": "ok", "message": texte}
+    return {
+        "status": "ok",
+        "message": texte,
+        "audio_url": f"/audio/{audio_file}" if audio_file else None,
+    }
 
 
 @app.get("/api/settings")

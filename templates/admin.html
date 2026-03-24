@@ -31,6 +31,11 @@
         <h2>Ajouter un contact</h2>
         <form method="POST" action="/admin/contacts/add">
             <div class="form-row">
+                <select name="civilite" style="flex:0 0 130px;">
+                    <option value="M">Monsieur</option>
+                    <option value="Mme">Madame</option>
+                    <option value="">Non precise</option>
+                </select>
                 <input type="text" name="nom" placeholder="Nom" required>
                 <input type="text" name="prenom" placeholder="Prenom" required>
                 <input type="email" name="email" placeholder="Email">
@@ -42,7 +47,7 @@
         <div class="import-section">
             <h3>Importer des contacts (CSV)</h3>
             <p style="font-size:0.85rem; color:#888; margin-bottom:10px;">
-                Format attendu : colonnes Nom;Prenom;Email;Telephone (separateur point-virgule)
+                Format attendu : colonnes Nom;Prenom;Civilite;Email;Telephone (separateur point-virgule). Civilite : M, Mme, ou vide
             </p>
             <form method="POST" action="/admin/contacts/import" enctype="multipart/form-data">
                 <input type="file" name="csv_file" accept=".csv" required>
@@ -53,6 +58,7 @@
         <table class="contacts-table">
             <thead>
                 <tr>
+                    <th>Civilite</th>
                     <th>Nom</th>
                     <th>Prenom</th>
                     <th>Email</th>
@@ -64,6 +70,14 @@
             <tbody>
                 {% for c in contacts %}
                 <tr id="row-{{ c.id }}">
+                    <td>
+                        <span class="display-field">{% if c.civilite == 'M' %}M.{% elif c.civilite == 'Mme' %}Mme{% else %}-{% endif %}</span>
+                        <select class="edit-field" style="display:none; width:100%;" data-field="civilite">
+                            <option value="M" {% if c.civilite == 'M' %}selected{% endif %}>Monsieur</option>
+                            <option value="Mme" {% if c.civilite == 'Mme' %}selected{% endif %}>Madame</option>
+                            <option value="" {% if c.civilite == '' %}selected{% endif %}>Non precise</option>
+                        </select>
+                    </td>
                     <td>
                         <span class="display-field">{{ c.nom }}</span>
                         <input class="edit-field" type="text" value="{{ c.nom }}" style="display:none; width:100%;" data-field="nom">
@@ -133,6 +147,21 @@
                     <input type="color" name="color_button_text" value="{{ settings.color_button_text }}">
                 </div>
             </div>
+            <div class="settings-group">
+                <h3>Phrase d'annonce</h3>
+                <p style="font-size:0.85rem; color:#888; margin-bottom:10px;">
+                    Utilisez les blocs : <strong>{civilite}</strong> (Monsieur/Madame ou rien),
+                    <strong>{nom}</strong>, <strong>{prenom}</strong>
+                </p>
+                <div class="color-row">
+                    <label>Phrase</label>
+                    <input type="text" name="phrase_accueil" value="{{ settings.phrase_accueil }}"
+                           style="width:100%; max-width:500px;">
+                </div>
+                <p style="font-size:0.85rem; color:#888; margin-top:8px;">
+                    Exemple : "{civilite} {prenom} {nom} est demande a l'accueil"
+                </p>
+            </div>
             <button type="submit" class="btn btn-primary">Enregistrer</button>
         </form>
 
@@ -185,11 +214,11 @@
             const form = document.createElement('form');
             form.method = 'POST';
             form.action = '/admin/contacts/edit/' + id;
-            row.querySelectorAll('.edit-field').forEach(input => {
+            row.querySelectorAll('.edit-field').forEach(el => {
                 const hidden = document.createElement('input');
                 hidden.type = 'hidden';
-                hidden.name = input.dataset.field;
-                hidden.value = input.value;
+                hidden.name = el.dataset.field;
+                hidden.value = el.value;
                 form.appendChild(hidden);
             });
             document.body.appendChild(form);

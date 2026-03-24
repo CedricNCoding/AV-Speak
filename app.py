@@ -49,6 +49,7 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             nom TEXT NOT NULL,
             prenom TEXT NOT NULL,
+            civilite TEXT DEFAULT 'M',
             email TEXT DEFAULT '',
             telephone TEXT DEFAULT '',
             call_count INTEGER DEFAULT 0
@@ -58,6 +59,10 @@ def init_db():
             value TEXT NOT NULL
         );
     """)
+    # Migration: add civilite column if missing
+    columns = [row[1] for row in conn.execute("PRAGMA table_info(contacts)").fetchall()]
+    if "civilite" not in columns:
+        conn.execute("ALTER TABLE contacts ADD COLUMN civilite TEXT DEFAULT 'M'")
     # Create default admin if not exists
     existing = conn.execute("SELECT id FROM users WHERE username = 'admin'").fetchone()
     if not existing:
@@ -72,6 +77,7 @@ def init_db():
         "color_button": "#1a73e8",
         "color_button_text": "#ffffff",
         "entreprise_nom": "Accueil",
+        "phrase_accueil": "{civilite} {prenom} {nom} est demande a l'accueil",
     }
     for key, value in defaults.items():
         conn.execute(
@@ -190,8 +196,18 @@ async def announce(contact_id: int):
     settings = get_settings(conn)
     conn.close()
 
-    civilite = "Monsieur" if not contact["prenom"].endswith(("a", "e", "ine", "elle", "ette")) else "Madame"
-    texte = f"{civilite} {contact['prenom']} {contact['nom']} est demandé à l'accueil"
+    civilite_map = {"M": "Monsieur", "Mme": "Madame", "": ""}
+    civilite = civilite_map.get(contact["civilite"], "")
+
+    phrase_template = settings.get("phrase_accueil", "{civilite} {prenom} {nom} est demande a l'accueil")
+    texte = phrase_template.format(
+        civilite=civilite,
+        prenom=contact["prenom"],
+        nom=contact["nom"],
+    ).strip()
+    # Clean up double spaces if civilite is empty
+    while "  " in texte:
+        texte = texte.replace("  ", " ")
 
     audio_file = generate_tts(texte)
 
@@ -266,14 +282,15 @@ async def admin_add_contact(
     request: Request,
     nom: str = Form(...),
     prenom: str = Form(...),
+    civilite: str = Form("M"),
     email: str = Form(""),
     telephone: str = Form(""),
 ):
     require_auth(request)
     conn = get_db()
     conn.execute(
-        "INSERT INTO contacts (nom, prenom, email, telephone) VALUES (?, ?, ?, ?)",
-        (nom.strip(), prenom.strip(), email.strip(), telephone.strip()),
+        "INSERT INTO contacts (nom, prenom, civilite, email, telephone) VALUES (?, ?, ?, ?, ?)",
+        (nom.strip(), prenom.strip(), civilite.strip(), email.strip(), telephone.strip()),
     )
     conn.commit()
     conn.close()
@@ -286,14 +303,15 @@ async def admin_edit_contact(
     contact_id: int,
     nom: str = Form(...),
     prenom: str = Form(...),
+    civilite: str = Form("M"),
     email: str = Form(""),
     telephone: str = Form(""),
 ):
     require_auth(request)
     conn = get_db()
     conn.execute(
-        "UPDATE contacts SET nom=?, prenom=?, email=?, telephone=? WHERE id=?",
-        (nom.strip(), prenom.strip(), email.strip(), telephone.strip(), contact_id),
+        "UPDATE contacts SET nom=?, prenom=?, civilite=?, email=?, telephone=? WHERE id=?",
+        (nom.strip(), prenom.strip(), civilite.strip(), email.strip(), telephone.strip(), contact_id),
     )
     conn.commit()
     conn.close()
@@ -316,7 +334,7 @@ async def admin_update_settings(request: Request):
     form = await request.form()
     conn = get_db()
     for key in ("color_primary", "color_secondary", "color_background", "color_text",
-                "color_button", "color_button_text", "entreprise_nom"):
+                "color_button", "color_button_text", "entreprise_nom", "phrase_accueil"):
         value = form.get(key)
         if value is not None:
             conn.execute("UPDATE settings SET value = ? WHERE key = ?", (value.strip(), key))
@@ -367,10 +385,13 @@ async def admin_import_contacts(request: Request):
         prenom = row.get("prenom", row.get("Prenom", row.get("Prénom", ""))).strip()
         email = row.get("email", row.get("Email", row.get("Mail", ""))).strip()
         telephone = row.get("telephone", row.get("Telephone", row.get("Téléphone", row.get("Tel", "")))).strip()
+        civilite = row.get("civilite", row.get("Civilite", row.get("Civilité", row.get("Genre", "M")))).strip()
+        if civilite not in ("M", "Mme", ""):
+            civilite = "M"
         if nom and prenom:
             conn.execute(
-                "INSERT INTO contacts (nom, prenom, email, telephone) VALUES (?, ?, ?, ?)",
-                (nom, prenom, email, telephone),
+                "INSERT INTO contacts (nom, prenom, civilite, email, telephone) VALUES (?, ?, ?, ?, ?)",
+                (nom, prenom, civilite, email, telephone),
             )
             count += 1
     conn.commit()

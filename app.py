@@ -163,12 +163,17 @@ def generate_tts(texte: str) -> str | None:
 # --- Email sending ---
 
 def send_email(settings: dict, contact: dict, civilite: str,
-               visitor_name: str = "", visitor_email: str = ""):
+               visitor_name: str = "", visitor_email: str = "",
+               raise_on_error: bool = False):
     """Send notification email to the contact."""
     if settings.get("smtp_enabled") != "1":
+        if raise_on_error:
+            raise ValueError("SMTP désactivé dans les paramètres")
         return
     email_to = contact["email"]
     if not email_to:
+        if raise_on_error:
+            raise ValueError("Pas d'adresse email pour ce contact")
         return
 
     try:
@@ -198,20 +203,39 @@ def send_email(settings: dict, contact: dict, civilite: str,
             server.login(settings["smtp_user"], settings["smtp_password"])
         server.send_message(msg)
         server.quit()
-        print(f"Email envoye a {email_to}")
+        print(f"Email envoyé à {email_to}")
     except Exception as e:
         print(f"Erreur envoi email: {e}")
+        if raise_on_error:
+            raise
 
 
 # --- OVH SMS sending ---
 
 def send_sms(settings: dict, contact: dict, civilite: str,
-             visitor_name: str = "", visitor_email: str = ""):
+             visitor_name: str = "", visitor_email: str = "",
+             raise_on_error: bool = False):
     """Send notification SMS via OVH API."""
     if settings.get("sms_enabled") != "1":
+        if raise_on_error:
+            raise ValueError("SMS désactivé dans les paramètres")
         return
     phone = contact["telephone"]
     if not phone:
+        if raise_on_error:
+            raise ValueError("Pas de numéro de téléphone pour ce contact")
+        return
+
+    # Vérifications préalables
+    missing = []
+    for key in ("ovh_app_key", "ovh_app_secret", "ovh_consumer_key", "ovh_sms_service"):
+        if not settings.get(key):
+            missing.append(key)
+    if missing:
+        err = f"Paramètres OVH manquants : {', '.join(missing)}"
+        if raise_on_error:
+            raise ValueError(err)
+        print(f"Erreur SMS: {err}")
         return
 
     try:
@@ -246,10 +270,14 @@ def send_sms(settings: dict, contact: dict, civilite: str,
             params["sender"] = sender
             params["senderForResponse"] = False
 
-        client.post(f"/sms/{service}/jobs", **params)
-        print(f"SMS envoye a {phone}")
+        result = client.post(f"/sms/{service}/jobs", **params)
+        print(f"SMS envoyé à {phone} — réponse OVH: {result}")
+        if raise_on_error and result.get("invalidReceivers"):
+            raise ValueError(f"Numéros invalides : {result['invalidReceivers']}")
     except Exception as e:
         print(f"Erreur envoi SMS: {e}")
+        if raise_on_error:
+            raise
 
 
 def send_notifications(settings: dict, contact: dict, civilite: str,
@@ -546,10 +574,10 @@ async def admin_test_email(request: Request):
     test_contact = {"prenom": "Test", "nom": "Utilisateur", "civilite": "M",
                     "email": settings.get("smtp_from", ""), "telephone": ""}
     try:
-        send_email(settings, test_contact, "Monsieur")
-        return JSONResponse({"status": "ok", "message": "Email de test envoye a " + test_contact["email"]})
+        send_email(settings, test_contact, "Monsieur", raise_on_error=True)
+        return JSONResponse({"status": "ok", "message": "Email de test envoyé à " + test_contact["email"]})
     except Exception as e:
-        return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
+        return JSONResponse({"status": "error", "message": f"Erreur: {type(e).__name__}: {e}"})
 
 
 @app.post("/admin/test-sms")
@@ -565,10 +593,10 @@ async def admin_test_sms(request: Request):
     test_contact = {"prenom": "Test", "nom": "Utilisateur", "civilite": "M",
                     "email": "", "telephone": phone}
     try:
-        send_sms(settings, test_contact, "Monsieur")
-        return JSONResponse({"status": "ok", "message": "SMS de test envoye a " + phone})
+        send_sms(settings, test_contact, "Monsieur", raise_on_error=True)
+        return JSONResponse({"status": "ok", "message": "SMS de test envoyé à " + phone})
     except Exception as e:
-        return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
+        return JSONResponse({"status": "error", "message": f"Erreur: {type(e).__name__}: {e}"})
 
 
 # --- CSV Import ---

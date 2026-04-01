@@ -104,6 +104,13 @@ def init_db():
         "sms_body": "{civilite} {prenom} {nom} vous attend a l'accueil. Visiteur: {visiteur_nom}",
         # Notifications
         "notif_on_announce": "1",
+        # Repeat / diffusion
+        "repeat_count": "1",
+        "repeat_delay": "20",
+        # Visitor contact fields
+        "contact_fields_enabled": "1",
+        # Kiosk instruction text
+        "kiosk_instruction": "",
     }
     for key, value in defaults.items():
         conn.execute(
@@ -373,6 +380,8 @@ async def announce(contact_id: int, visitor_name: str = "", visitor_email: str =
         "status": "ok",
         "message": texte,
         "audio_url": f"/audio/{audio_file}" if audio_file else None,
+        "repeat_count": int(settings.get("repeat_count", "1")),
+        "repeat_delay": int(settings.get("repeat_delay", "20")),
     }
 
 
@@ -497,7 +506,9 @@ async def admin_update_settings(request: Request):
                 "smtp_from", "smtp_tls", "email_subject", "email_body",
                 "sms_enabled", "ovh_endpoint", "ovh_app_key", "ovh_app_secret",
                 "ovh_consumer_key", "ovh_sms_service", "ovh_sms_sender", "sms_body",
-                "notif_on_announce"):
+                "notif_on_announce",
+                "repeat_count", "repeat_delay",
+                "contact_fields_enabled", "kiosk_instruction"):
         value = form.get(key)
         if value is not None:
             conn.execute("UPDATE settings SET value = ? WHERE key = ?", (value.strip(), key))

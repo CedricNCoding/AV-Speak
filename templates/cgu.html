@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Conditions G&eacute;n&eacute;rales d'Utilisation - AV-Speak</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <style>
+        :root { --color-primary: {{ settings.color_primary }}; }
+        body { background: #f0f2f5; margin: 0; padding: 20px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+        .cgu-container {
+            max-width: 800px; margin: 0 auto; background: #fff;
+            border-radius: 16px; box-shadow: 0 2px 12px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        .cgu-header {
+            background: var(--color-primary); color: #fff;
+            padding: 25px 30px; text-align: center;
+        }
+        .cgu-header h1 { margin: 0; font-size: 1.5rem; }
+        .cgu-header p { margin: 8px 0 0; opacity: 0.9; font-size: 0.95rem; }
+        .cgu-body {
+            padding: 30px; max-height: 55vh; overflow-y: auto;
+            line-height: 1.7; color: #333; font-size: 0.95rem;
+        }
+        .cgu-body h2 { color: var(--color-primary); font-size: 1.3rem; margin-top: 0; }
+        .cgu-body h3 { color: #444; font-size: 1.05rem; margin-top: 25px; }
+        .cgu-body ul { padding-left: 20px; }
+        .cgu-body li { margin-bottom: 8px; }
+        .cgu-footer {
+            padding: 20px 30px; background: #f9f9f9; border-top: 1px solid #eee;
+            text-align: center;
+        }
+        .cgu-footer p { color: #888; font-size: 0.85rem; margin: 0 0 15px; }
+        .cgu-actions { display: flex; gap: 12px; justify-content: center; }
+        .btn-accept {
+            padding: 14px 40px; font-size: 1.1rem; font-weight: 600;
+            background: var(--color-primary); color: #fff; border: none;
+            border-radius: 10px; cursor: pointer;
+        }
+        .btn-accept:hover { opacity: 0.9; }
+        .btn-refuse {
+            padding: 14px 30px; font-size: 1rem;
+            background: #eee; color: #666; border: none;
+            border-radius: 10px; cursor: pointer; text-decoration: none;
+        }
+        .btn-refuse:hover { background: #ddd; }
+    </style>
+</head>
+<body>
+    <div class="cgu-container">
+        <div class="cgu-header">
+            <h1>Conditions G&eacute;n&eacute;rales d'Utilisation</h1>
+            <p>Veuillez lire et accepter les conditions avant de continuer</p>
+        </div>
+
+        <div class="cgu-body">
+            {{ cgu_text | safe }}
+        </div>
+
+        <div class="cgu-footer">
+            <p>En cliquant sur &laquo; J'accepte &raquo;, vous confirmez avoir lu et accept&eacute; les conditions ci-dessus.</p>
+            <div class="cgu-actions">
+                <a href="/admin/logout" class="btn-refuse">Refuser</a>
+                <form method="POST" action="/admin/cgu/accept" style="display:inline;">
+                    <button type="submit" class="btn-accept">J'accepte</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

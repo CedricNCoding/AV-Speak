@@ -29,7 +29,8 @@ app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="stat
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
 # Simple session store (in-memory, single PC)
-sessions: dict[str, str] = {}
+# sessions maps session_id -> {"username": str, "cgu_accepted": bool}
+sessions: dict[str, dict] = {}
 
 # --- Database ---
 
@@ -148,7 +149,10 @@ def require_auth(request: Request):
     session_id = request.cookies.get("session_id")
     if not session_id or session_id not in sessions:
         raise HTTPException(status_code=status.HTTP_303_SEE_OTHER, headers={"Location": "/admin/login"})
-    return sessions[session_id]
+    session = sessions[session_id]
+    if not session.get("cgu_accepted"):
+        raise HTTPException(status_code=status.HTTP_303_SEE_OTHER, headers={"Location": "/admin/cgu"})
+    return session["username"]
 
 
 # --- TTS generation ---
@@ -476,8 +480,8 @@ async def admin_login(request: Request, username: str = Form(...), password: str
             "request": request, "settings": settings, "error": "Identifiants incorrects"
         })
     session_id = secrets.token_hex(32)
-    sessions[session_id] = username
-    response = RedirectResponse(url="/admin", status_code=303)
+    sessions[session_id] = {"username": username, "cgu_accepted": False}
+    response = RedirectResponse(url="/admin/cgu", status_code=303)
     response.set_cookie("session_id", session_id, httponly=True)
     return response
 
@@ -490,6 +494,76 @@ async def admin_logout(request: Request):
     response = RedirectResponse(url="/admin/login", status_code=303)
     response.delete_cookie("session_id")
     return response
+
+
+CGU_TEXT = """
+<h2>Conditions G&eacute;n&eacute;rales d'Utilisation — AV-Speak</h2>
+<p><em>Derni&egrave;re mise &agrave; jour : avril 2026</em></p>
+
+<h3>1. Objet</h3>
+<p>AV-Speak est un syst&egrave;me d'annonce de visiteurs destin&eacute; &agrave; faciliter l'accueil au sein d'un
+&eacute;tablissement. Le logiciel est fourni <strong>en l'&eacute;tat</strong>, sans garantie d'aucune sorte.</p>
+
+<h3>2. Responsabilit&eacute; du client</h3>
+<p>Le client (personne physique ou morale utilisant le logiciel) est <strong>seul responsable</strong> :</p>
+<ul>
+    <li>De la <strong>collecte, du stockage et de la conservation</strong> des donn&eacute;es personnelles
+        saisies dans le syst&egrave;me (noms, pr&eacute;noms, emails, num&eacute;ros de t&eacute;l&eacute;phone, donn&eacute;es visiteurs).</li>
+    <li>Du <strong>respect de la r&eacute;glementation</strong> applicable en mati&egrave;re de protection des donn&eacute;es
+        personnelles (notamment le RGPD en Europe) : d&eacute;clarations, consentements, dur&eacute;es de conservation,
+        droits des personnes concern&eacute;es.</li>
+    <li>De la <strong>sauvegarde</strong> r&eacute;guli&egrave;re de la base de donn&eacute;es et de la s&eacute;curit&eacute; d'acc&egrave;s au syst&egrave;me.</li>
+    <li>De la configuration et de la maintenance du mat&eacute;riel et du r&eacute;seau sur lequel le logiciel est d&eacute;ploy&eacute;.</li>
+</ul>
+
+<h3>3. Registre de s&eacute;curit&eacute;</h3>
+<p>La fonctionnalit&eacute; &laquo; Registre de s&eacute;curit&eacute; &raquo; propos&eacute;e par AV-Speak est un <strong>outil
+d'aide au suivi des visiteurs</strong>. Elle <strong>ne constitue en aucun cas un registre de s&eacute;curit&eacute;
+conforme</strong> aux normes r&eacute;glementaires en vigueur (Code du travail, r&egrave;glements ERP, normes de s&ucirc;ret&eacute;, etc.).</p>
+<p>Le client ne peut en aucun cas se pr&eacute;valoir de l'utilisation de cette fonctionnalit&eacute; pour
+justifier de sa conformit&eacute; aux obligations l&eacute;gales en mati&egrave;re de s&eacute;curit&eacute; et de s&ucirc;ret&eacute;.</p>
+
+<h3>4. Limitation de responsabilit&eacute;</h3>
+<p>L'&eacute;diteur du logiciel ne pourra &ecirc;tre tenu responsable :</p>
+<ul>
+    <li>De toute <strong>perte, alt&eacute;ration ou fuite de donn&eacute;es</strong> quelle qu'en soit la cause.</li>
+    <li>De tout <strong>dommage direct ou indirect</strong> r&eacute;sultant de l'utilisation ou de l'impossibilit&eacute;
+        d'utiliser le logiciel.</li>
+    <li>Du <strong>non-respect par le client</strong> de ses obligations l&eacute;gales et r&eacute;glementaires.</li>
+</ul>
+
+<h3>5. Donn&eacute;es personnelles</h3>
+<p>Les donn&eacute;es sont stock&eacute;es <strong>localement</strong> sur le poste du client (base SQLite). Aucune donn&eacute;e
+n'est transmise &agrave; l'&eacute;diteur. Le client est le <strong>responsable de traitement</strong> au sens du RGPD
+et doit mettre en &oelig;uvre les mesures techniques et organisationnelles appropri&eacute;es.</p>
+
+<h3>6. Acceptation</h3>
+<p>L'utilisation du logiciel implique l'acceptation pleine et enti&egrave;re des pr&eacute;sentes conditions.
+&Agrave; chaque connexion &agrave; l'interface d'administration, l'utilisateur devra confirmer avoir pris
+connaissance de ces conditions.</p>
+"""
+
+
+@app.get("/admin/cgu", response_class=HTMLResponse)
+async def admin_cgu_page(request: Request):
+    session_id = request.cookies.get("session_id")
+    if not session_id or session_id not in sessions:
+        return RedirectResponse(url="/admin/login", status_code=303)
+    conn = get_db()
+    settings = get_settings(conn)
+    conn.close()
+    return templates.TemplateResponse("cgu.html", {
+        "request": request, "settings": settings, "cgu_text": CGU_TEXT,
+    })
+
+
+@app.post("/admin/cgu/accept")
+async def admin_cgu_accept(request: Request):
+    session_id = request.cookies.get("session_id")
+    if not session_id or session_id not in sessions:
+        return RedirectResponse(url="/admin/login", status_code=303)
+    sessions[session_id]["cgu_accepted"] = True
+    return RedirectResponse(url="/admin", status_code=303)
 
 
 @app.get("/admin", response_class=HTMLResponse)
@@ -517,6 +591,7 @@ async def admin_page(request: Request):
         "contacts": contacts,
         "visitors_present": visitors_present,
         "visitors_history": visitors_history,
+        "cgu_text": CGU_TEXT,
     })
 
 

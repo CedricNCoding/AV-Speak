@@ -25,6 +25,7 @@
         <button class="admin-tab" onclick="showTab('settings')">Apparence</button>
         <button class="admin-tab" onclick="showTab('notifications')">Notifications</button>
         <button class="admin-tab" onclick="showTab('register')">Registre</button>
+        <button class="admin-tab" onclick="showTab('cgu')">CGU</button>
         <button class="admin-tab" onclick="showTab('password')">Mot de passe</button>
     </div>
 
@@ -504,6 +505,13 @@
             {% endif %}
         </div>
         {% endif %}
+    </div>
+
+    <!-- CGU panel -->
+    <div class="admin-panel" id="panel-cgu">
+        <div style="max-width:800px; line-height:1.7; font-size:0.95rem;">
+            {{ cgu_text | safe }}
+        </div>
     </div>
 
     <!-- Password panel -->

@@ -71,6 +71,12 @@
         </div>
     </div>
 
+    <!-- Present visitors section (security register) -->
+    <div id="visitorsSection" class="top-section" style="display:none;">
+        <h2>Visiteurs pr&eacute;sents</h2>
+        <div id="visitorsList" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:12px;"></div>
+    </div>
+
     <!-- Confirmation modal -->
     <div class="modal-overlay" id="confirmModal">
         <div class="modal-box">
@@ -115,12 +121,6 @@
                 Valider
             </button>
         </div>
-    </div>
-
-    <!-- Present visitors section (security register) -->
-    <div id="visitorsSection" style="display:none; max-width:800px; margin:20px auto; padding:0 20px;">
-        <h2 style="font-size:1.2rem; color:var(--color-primary); margin-bottom:10px;">Visiteurs pr&eacute;sents</h2>
-        <div id="visitorsList" style="display:flex; flex-wrap:wrap; gap:10px;"></div>
     </div>
 
     <a href="/admin/login" class="admin-link">Admin</a>
@@ -368,14 +368,17 @@
                 list.innerHTML = '';
                 visitors.forEach(v => {
                     const card = document.createElement('div');
-                    card.style.cssText = 'background:var(--color-secondary); border:2px solid var(--color-primary); border-radius:12px; padding:12px 18px; display:flex; align-items:center; gap:12px;';
+                    card.style.cssText = 'background:var(--color-secondary); border:2px solid var(--color-primary); border-radius:12px; padding:14px 18px; display:flex; align-items:center; gap:14px;';
                     const info = document.createElement('div');
-                    info.innerHTML = `<strong>${escapeHtml(v.prenom)} ${escapeHtml(v.nom)}</strong>`
-                        + (v.entreprise ? `<br><span style="font-size:0.85rem; color:#888;">${escapeHtml(v.entreprise)}</span>` : '')
-                        + `<br><span style="font-size:0.8rem; color:#aaa;">Depuis ${v.arrived_at.slice(11, 16)}</span>`;
+                    info.style.cssText = 'flex:1; min-width:0;';
+                    let html = `<strong>${escapeHtml(v.prenom)} ${escapeHtml(v.nom)}</strong>`;
+                    if (v.entreprise) html += `<br><span style="font-size:0.85rem; color:#888;">${escapeHtml(v.entreprise)}</span>`;
+                    if (v.contact_prenom || v.contact_nom) html += `<br><span style="font-size:0.85rem; color:var(--color-primary);">RDV : ${escapeHtml(v.contact_prenom || '')} ${escapeHtml(v.contact_nom || '')}</span>`;
+                    html += `<br><span style="font-size:0.8rem; color:#aaa;">Depuis ${v.arrived_at.slice(11, 16)}</span>`;
+                    info.innerHTML = html;
                     const btn = document.createElement('button');
                     btn.textContent = 'Quitter';
-                    btn.style.cssText = 'padding:10px 20px; font-size:1rem; background:#e53935; color:#fff; border:none; border-radius:10px; cursor:pointer; margin-left:auto;';
+                    btn.style.cssText = 'padding:10px 20px; font-size:1rem; background:#e53935; color:#fff; border:none; border-radius:10px; cursor:pointer; flex-shrink:0;';
                     btn.onclick = () => visitorLeave(v.id);
                     card.appendChild(info);
                     card.appendChild(btn);

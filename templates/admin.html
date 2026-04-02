@@ -24,6 +24,7 @@
         <button class="admin-tab active" onclick="showTab('contacts')">Contacts</button>
         <button class="admin-tab" onclick="showTab('settings')">Apparence</button>
         <button class="admin-tab" onclick="showTab('notifications')">Notifications</button>
+        <button class="admin-tab" onclick="showTab('register')">Registre</button>
         <button class="admin-tab" onclick="showTab('password')">Mot de passe</button>
     </div>
 
@@ -382,6 +383,107 @@
                 <button type="submit" class="btn btn-primary">Enregistrer les param&egrave;tres</button>
             </div>
         </form>
+    </div>
+
+    <!-- Register panel -->
+    <div class="admin-panel" id="panel-register">
+        <h2>Registre de s&eacute;curit&eacute;</h2>
+
+        <form method="POST" action="/admin/settings" style="margin-bottom:30px;">
+            <div class="settings-group">
+                <div class="color-row">
+                    <label>Activer le registre de s&eacute;curit&eacute;</label>
+                    <select name="security_register_enabled" style="width:100px;">
+                        <option value="1" {% if settings.get('security_register_enabled','0') == '1' %}selected{% endif %}>Oui</option>
+                        <option value="0" {% if settings.get('security_register_enabled','0') == '0' %}selected{% endif %}>Non</option>
+                    </select>
+                </div>
+                <p style="font-size:0.85rem; color:#888; margin:5px 0 15px;">
+                    Quand activ&eacute;, le visiteur doit s'enregistrer (nom, pr&eacute;nom, entreprise) pour annoncer quelqu'un.
+                </p>
+                <div class="color-row">
+                    <label>Conserver l'historique des visites</label>
+                    <select name="security_register_history" style="width:100px;">
+                        <option value="1" {% if settings.get('security_register_history','1') == '1' %}selected{% endif %}>Oui</option>
+                        <option value="0" {% if settings.get('security_register_history','1') == '0' %}selected{% endif %}>Non</option>
+                    </select>
+                </div>
+                <p style="font-size:0.85rem; color:#888; margin:5px 0 15px;">
+                    Si d&eacute;sactiv&eacute;, les enregistrements sont supprim&eacute;s au d&eacute;part du visiteur.
+                </p>
+            </div>
+            <button type="submit" class="btn btn-primary">Enregistrer</button>
+        </form>
+
+        <!-- Visitors present -->
+        <div class="settings-group" style="padding:20px; background:#e8f5e9; border-radius:12px; margin-bottom:20px;">
+            <h3>Visiteurs pr&eacute;sents ({{ visitors_present|length }})</h3>
+            {% if visitors_present %}
+            <table class="contacts-table" style="margin-top:10px;">
+                <thead>
+                    <tr>
+                        <th>Nom</th>
+                        <th>Pr&eacute;nom</th>
+                        <th>Entreprise</th>
+                        <th>Personne visit&eacute;e</th>
+                        <th>Arriv&eacute;e</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for v in visitors_present %}
+                    <tr>
+                        <td>{{ v.nom }}</td>
+                        <td>{{ v.prenom }}</td>
+                        <td>{{ v.entreprise or '—' }}</td>
+                        <td>{{ v.contact_prenom }} {{ v.contact_nom }}</td>
+                        <td>{{ v.arrived_at }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <p style="color:#888; margin-top:10px;">Aucun visiteur pr&eacute;sent.</p>
+            {% endif %}
+        </div>
+
+        <!-- History -->
+        {% if settings.get('security_register_history','1') == '1' %}
+        <div class="settings-group" style="padding:20px; background:#f9f9f9; border-radius:12px;">
+            <h3>Historique des visites</h3>
+            {% if visitors_history %}
+            <table class="contacts-table" style="margin-top:10px;">
+                <thead>
+                    <tr>
+                        <th>Nom</th>
+                        <th>Pr&eacute;nom</th>
+                        <th>Entreprise</th>
+                        <th>Personne visit&eacute;e</th>
+                        <th>Arriv&eacute;e</th>
+                        <th>D&eacute;part</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for v in visitors_history %}
+                    <tr>
+                        <td>{{ v.nom }}</td>
+                        <td>{{ v.prenom }}</td>
+                        <td>{{ v.entreprise or '—' }}</td>
+                        <td>{{ v.contact_prenom }} {{ v.contact_nom }}</td>
+                        <td>{{ v.arrived_at }}</td>
+                        <td>{{ v.left_at }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            <form method="POST" action="/admin/visitors/purge" style="margin-top:15px;"
+                  onsubmit="return confirm('Supprimer tout l\'historique des visites ?')">
+                <button type="submit" class="btn btn-small btn-danger">Purger l'historique</button>
+            </form>
+            {% else %}
+            <p style="color:#888; margin-top:10px;">Aucun historique.</p>
+            {% endif %}
+        </div>
+        {% endif %}
     </div>
 
     <!-- Password panel -->

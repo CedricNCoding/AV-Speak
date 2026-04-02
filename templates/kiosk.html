@@ -72,7 +72,14 @@
             <h2>Confirmer l'appel</h2>
             <p id="confirmText"></p>
 
-            {% if settings.get('contact_fields_enabled', '1') == '1' %}
+            {% if settings.get('security_register_enabled', '0') == '1' %}
+            <div class="visitor-fields">
+                <input type="text" id="visitorName" placeholder="Votre nom *" required>
+                <input type="text" id="visitorPrenom" placeholder="Votre pr&eacute;nom *" required>
+                <input type="text" id="visitorEntreprise" placeholder="Entreprise" style="width:98%;">
+                <p class="visitor-notice">Enregistrement obligatoire — registre de s&eacute;curit&eacute;</p>
+            </div>
+            {% elif settings.get('contact_fields_enabled', '1') == '1' %}
             <div class="visitor-fields">
                 <input type="text" id="visitorName" placeholder="Votre nom (facultatif)">
                 <input type="email" id="visitorEmail" placeholder="Votre email (facultatif)">
@@ -105,6 +112,12 @@
         </div>
     </div>
 
+    <!-- Present visitors section (security register) -->
+    <div id="visitorsSection" style="display:none; max-width:800px; margin:20px auto; padding:0 20px;">
+        <h2 style="font-size:1.2rem; color:var(--color-primary); margin-bottom:10px;">Visiteurs pr&eacute;sents</h2>
+        <div id="visitorsList" style="display:flex; flex-wrap:wrap; gap:10px;"></div>
+    </div>
+
     <a href="/admin/login" class="admin-link">Admin</a>
 
     <script>
@@ -115,6 +128,7 @@
         let currentAudio = null;
 
         const contactFieldsEnabled = {{ 'true' if settings.get('contact_fields_enabled', '1') == '1' else 'false' }};
+        const securityRegisterEnabled = {{ 'true' if settings.get('security_register_enabled', '0') == '1' else 'false' }};
         const searchInput = document.getElementById('searchInput');
         const resultsSection = document.getElementById('resultsSection');
         const resultsList = document.getElementById('resultsList');
@@ -154,7 +168,11 @@
             selectedContactId = id;
             document.getElementById('confirmText').textContent =
                 `Appeler ${prenom} ${nom} \u00e0 l'accueil ?`;
-            if (contactFieldsEnabled) {
+            if (securityRegisterEnabled) {
+                document.getElementById('visitorName').value = '';
+                document.getElementById('visitorPrenom').value = '';
+                document.getElementById('visitorEntreprise').value = '';
+            } else if (contactFieldsEnabled) {
                 document.getElementById('visitorName').value = '';
                 document.getElementById('visitorEmail').value = '';
             }
@@ -173,6 +191,7 @@
             document.getElementById('successOverlay').classList.remove('active');
             document.getElementById('validateBtn').style.display = 'none';
             document.getElementById('repeatInfo').style.display = 'none';
+            if (securityRegisterEnabled) loadVisitors();
         }
 
         function stopRepeat() {
@@ -196,7 +215,18 @@
             const contactId = selectedContactId;
             let visitorName = '';
             let visitorEmail = '';
-            if (contactFieldsEnabled) {
+            let visitorPrenom = '';
+            let visitorEntreprise = '';
+
+            if (securityRegisterEnabled) {
+                visitorName = document.getElementById('visitorName').value.trim();
+                visitorPrenom = document.getElementById('visitorPrenom').value.trim();
+                visitorEntreprise = document.getElementById('visitorEntreprise').value.trim();
+                if (!visitorName || !visitorPrenom) {
+                    alert('Veuillez renseigner votre nom et pr\u00e9nom.');
+                    return;
+                }
+            } else if (contactFieldsEnabled) {
                 visitorName = document.getElementById('visitorName').value.trim();
                 visitorEmail = document.getElementById('visitorEmail').value.trim();
             }
@@ -214,6 +244,8 @@
                 const params = new URLSearchParams();
                 if (visitorName) params.append('visitor_name', visitorName);
                 if (visitorEmail) params.append('visitor_email', visitorEmail);
+                if (visitorPrenom) params.append('visitor_prenom', visitorPrenom);
+                if (visitorEntreprise) params.append('visitor_entreprise', visitorEntreprise);
                 const url = '/api/announce/' + contactId + (params.toString() ? '?' + params.toString() : '');
                 const resp = await fetch(url, { method: 'POST' });
                 const data = await resp.json();
@@ -314,6 +346,52 @@
         document.addEventListener('click', resetInactivity);
         document.addEventListener('keydown', resetInactivity);
         resetInactivity();
+
+        // --- Security register: present visitors ---
+        async function loadVisitors() {
+            if (!securityRegisterEnabled) return;
+            try {
+                const resp = await fetch('/api/visitors/present');
+                const visitors = await resp.json();
+                const section = document.getElementById('visitorsSection');
+                const list = document.getElementById('visitorsList');
+                if (visitors.length === 0) {
+                    section.style.display = 'none';
+                    return;
+                }
+                section.style.display = 'block';
+                list.innerHTML = '';
+                visitors.forEach(v => {
+                    const card = document.createElement('div');
+                    card.style.cssText = 'background:var(--color-secondary); border:2px solid var(--color-primary); border-radius:12px; padding:12px 18px; display:flex; align-items:center; gap:12px;';
+                    const info = document.createElement('div');
+                    info.innerHTML = `<strong>${escapeHtml(v.prenom)} ${escapeHtml(v.nom)}</strong>`
+                        + (v.entreprise ? `<br><span style="font-size:0.85rem; color:#888;">${escapeHtml(v.entreprise)}</span>` : '')
+                        + `<br><span style="font-size:0.8rem; color:#aaa;">Depuis ${v.arrived_at.slice(11, 16)}</span>`;
+                    const btn = document.createElement('button');
+                    btn.textContent = 'Quitter';
+                    btn.style.cssText = 'padding:10px 20px; font-size:1rem; background:#e53935; color:#fff; border:none; border-radius:10px; cursor:pointer; margin-left:auto;';
+                    btn.onclick = () => visitorLeave(v.id);
+                    card.appendChild(info);
+                    card.appendChild(btn);
+                    list.appendChild(card);
+                });
+            } catch (e) {}
+        }
+
+        async function visitorLeave(id) {
+            if (!confirm('Confirmer votre d\u00e9part ?')) return;
+            try {
+                await fetch('/api/visitors/' + id + '/leave', { method: 'POST' });
+                loadVisitors();
+            } catch (e) {}
+        }
+
+        // Load visitors on start and refresh every 15s
+        if (securityRegisterEnabled) {
+            loadVisitors();
+            setInterval(loadVisitors, 15000);
+        }
     </script>
 </body>
 </html>

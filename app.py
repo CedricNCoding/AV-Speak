@@ -62,6 +62,16 @@ def init_db():
             key TEXT PRIMARY KEY,
             value TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS visitors (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nom TEXT NOT NULL,
+            prenom TEXT NOT NULL,
+            entreprise TEXT DEFAULT '',
+            contact_id INTEGER,
+            arrived_at TEXT NOT NULL,
+            left_at TEXT,
+            FOREIGN KEY (contact_id) REFERENCES contacts(id) ON DELETE SET NULL
+        );
     """)
     # Migration: add civilite column if missing
     columns = [row[1] for row in conn.execute("PRAGMA table_info(contacts)").fetchall()]
@@ -111,6 +121,9 @@ def init_db():
         "contact_fields_enabled": "1",
         # Kiosk instruction text
         "kiosk_instruction": "",
+        # Security register
+        "security_register_enabled": "0",
+        "security_register_history": "1",
     }
     for key, value in defaults.items():
         conn.execute(
@@ -346,7 +359,8 @@ async def top_contacts():
 
 
 @app.post("/api/announce/{contact_id}")
-async def announce(contact_id: int, visitor_name: str = "", visitor_email: str = ""):
+async def announce(contact_id: int, visitor_name: str = "", visitor_email: str = "",
+                   visitor_prenom: str = "", visitor_entreprise: str = ""):
     conn = get_db()
     contact = conn.execute("SELECT * FROM contacts WHERE id = ?", (contact_id,)).fetchone()
     if not contact:
@@ -354,9 +368,21 @@ async def announce(contact_id: int, visitor_name: str = "", visitor_email: str =
         raise HTTPException(status_code=404, detail="Contact non trouvé")
 
     conn.execute("UPDATE contacts SET call_count = call_count + 1 WHERE id = ?", (contact_id,))
-    conn.commit()
 
     settings = get_settings(conn)
+
+    # Security register: create visitor entry
+    visitor_id = None
+    if settings.get("security_register_enabled") == "1" and visitor_name.strip():
+        from datetime import datetime
+        cursor = conn.execute(
+            "INSERT INTO visitors (nom, prenom, entreprise, contact_id, arrived_at) VALUES (?, ?, ?, ?, ?)",
+            (visitor_name.strip(), visitor_prenom.strip(), visitor_entreprise.strip(),
+             contact_id, datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
+        )
+        visitor_id = cursor.lastrowid
+
+    conn.commit()
     conn.close()
 
     civilite_map = {"M": "Monsieur", "Mme": "Madame", "X": ""}
@@ -382,7 +408,42 @@ async def announce(contact_id: int, visitor_name: str = "", visitor_email: str =
         "audio_url": f"/audio/{audio_file}" if audio_file else None,
         "repeat_count": int(settings.get("repeat_count", "1")),
         "repeat_delay": int(settings.get("repeat_delay", "20")),
+        "visitor_id": visitor_id,
     }
+
+
+@app.get("/api/visitors/present")
+async def visitors_present():
+    """Return list of currently present visitors."""
+    conn = get_db()
+    visitors = conn.execute(
+        """SELECT v.id, v.nom, v.prenom, v.entreprise, v.arrived_at,
+                  c.prenom AS contact_prenom, c.nom AS contact_nom
+           FROM visitors v LEFT JOIN contacts c ON v.contact_id = c.id
+           WHERE v.left_at IS NULL ORDER BY v.arrived_at DESC"""
+    ).fetchall()
+    conn.close()
+    return [dict(v) for v in visitors]
+
+
+@app.post("/api/visitors/{visitor_id}/leave")
+async def visitor_leave(visitor_id: int):
+    """Mark a visitor as departed."""
+    from datetime import datetime
+    conn = get_db()
+    visitor = conn.execute("SELECT * FROM visitors WHERE id = ? AND left_at IS NULL", (visitor_id,)).fetchone()
+    if not visitor:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Visiteur non trouvé")
+    conn.execute("UPDATE visitors SET left_at = ? WHERE id = ?",
+                 (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), visitor_id))
+    settings = get_settings(conn)
+    # If history disabled, delete the record
+    if settings.get("security_register_history") != "1":
+        conn.execute("DELETE FROM visitors WHERE id = ?", (visitor_id,))
+    conn.commit()
+    conn.close()
+    return {"status": "ok"}
 
 
 @app.get("/api/settings")
@@ -436,11 +497,25 @@ async def admin_page(request: Request):
     conn = get_db()
     settings = get_settings(conn)
     contacts = conn.execute("SELECT * FROM contacts ORDER BY nom, prenom").fetchall()
+    visitors_present = conn.execute(
+        """SELECT v.id, v.nom, v.prenom, v.entreprise, v.arrived_at,
+                  c.prenom AS contact_prenom, c.nom AS contact_nom
+           FROM visitors v LEFT JOIN contacts c ON v.contact_id = c.id
+           WHERE v.left_at IS NULL ORDER BY v.arrived_at DESC"""
+    ).fetchall()
+    visitors_history = conn.execute(
+        """SELECT v.id, v.nom, v.prenom, v.entreprise, v.arrived_at, v.left_at,
+                  c.prenom AS contact_prenom, c.nom AS contact_nom
+           FROM visitors v LEFT JOIN contacts c ON v.contact_id = c.id
+           WHERE v.left_at IS NOT NULL ORDER BY v.left_at DESC LIMIT 100"""
+    ).fetchall()
     conn.close()
     return templates.TemplateResponse("admin.html", {
         "request": request,
         "settings": settings,
         "contacts": contacts,
+        "visitors_present": visitors_present,
+        "visitors_history": visitors_history,
     })
 
 
@@ -508,7 +583,8 @@ async def admin_update_settings(request: Request):
                 "ovh_consumer_key", "ovh_sms_service", "ovh_sms_sender", "sms_body",
                 "notif_on_announce",
                 "repeat_count", "repeat_delay",
-                "contact_fields_enabled", "kiosk_instruction"):
+                "contact_fields_enabled", "kiosk_instruction",
+                "security_register_enabled", "security_register_history"):
         value = form.get(key)
         if value is not None:
             conn.execute("UPDATE settings SET value = ? WHERE key = ?", (value.strip(), key))
@@ -571,6 +647,16 @@ async def admin_change_password(
         raise HTTPException(status_code=400, detail="Mot de passe actuel incorrect")
     new_hash = _bcrypt.hashpw(new_password.encode(), _bcrypt.gensalt()).decode()
     conn.execute("UPDATE users SET password_hash = ? WHERE username = ?", (new_hash, username))
+    conn.commit()
+    conn.close()
+    return RedirectResponse(url="/admin", status_code=303)
+
+
+@app.post("/admin/visitors/purge")
+async def admin_purge_visitors(request: Request):
+    require_auth(request)
+    conn = get_db()
+    conn.execute("DELETE FROM visitors WHERE left_at IS NOT NULL")
     conn.commit()
     conn.close()
     return RedirectResponse(url="/admin", status_code=303)

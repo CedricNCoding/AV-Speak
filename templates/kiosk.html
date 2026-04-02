@@ -42,6 +42,11 @@
             {{ settings.get('kiosk_instruction', '') | replace('\n', '<br>') | safe }}
         </div>
         {% endif %}
+        {% if settings.get('kiosk_image_url', '') %}
+        <div style="max-width:700px; margin:10px auto;">
+            <img src="{{ settings.kiosk_image_url }}" alt="Instructions" style="max-width:100%; max-height:300px; border-radius:10px;">
+        </div>
+        {% endif %}
         <p>Recherchez votre contact</p>
     </div>
 

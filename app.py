@@ -119,8 +119,9 @@ def init_db():
         "repeat_delay": "20",
         # Visitor contact fields
         "contact_fields_enabled": "1",
-        # Kiosk instruction text
+        # Kiosk instruction text/image
         "kiosk_instruction": "",
+        "kiosk_image_url": "",
         # Security register
         "security_register_enabled": "0",
         "security_register_history": "1",
@@ -628,6 +629,45 @@ async def admin_delete_logo(request: Request):
     conn = get_db()
     conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
                  ("logo_url", ""))
+    conn.commit()
+    conn.close()
+    return RedirectResponse(url="/admin", status_code=303)
+
+
+@app.post("/admin/kiosk-image")
+async def admin_upload_kiosk_image(request: Request):
+    require_auth(request)
+    form = await request.form()
+    file = form.get("kiosk_image_file")
+    if not file or not file.filename:
+        return RedirectResponse(url="/admin", status_code=303)
+
+    ext = Path(file.filename).suffix.lower()
+    if ext not in (".png", ".jpg", ".jpeg", ".svg", ".webp", ".gif"):
+        raise HTTPException(status_code=400, detail="Format non supporte (png, jpg, svg, webp, gif)")
+
+    content = await file.read()
+    img_path = BASE_DIR / "static" / f"kiosk_instruction{ext}"
+    for old in (BASE_DIR / "static").glob("kiosk_instruction.*"):
+        old.unlink()
+    img_path.write_bytes(content)
+
+    conn = get_db()
+    conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+                 ("kiosk_image_url", f"/static/kiosk_instruction{ext}"))
+    conn.commit()
+    conn.close()
+    return RedirectResponse(url="/admin", status_code=303)
+
+
+@app.post("/admin/kiosk-image/delete")
+async def admin_delete_kiosk_image(request: Request):
+    require_auth(request)
+    for old in (BASE_DIR / "static").glob("kiosk_instruction.*"):
+        old.unlink()
+    conn = get_db()
+    conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+                 ("kiosk_image_url", ""))
     conn.commit()
     conn.close()
     return RedirectResponse(url="/admin", status_code=303)

@@ -488,12 +488,10 @@
 
             function handleKey(key) {
                 if (!activeInput) return;
+                activeInput.focus();
                 if (key === '{bksp}') {
-                    const pos = activeInput.selectionStart;
-                    if (pos > 0) {
-                        activeInput.value = activeInput.value.slice(0, pos - 1) + activeInput.value.slice(pos);
-                        activeInput.setSelectionRange(pos - 1, pos - 1);
-                    }
+                    const val = activeInput.value;
+                    activeInput.value = val.slice(0, -1);
                 } else if (key === '{shift}') {
                     shifted = !shifted;
                     buildKeyboard();
@@ -515,9 +513,7 @@
             }
 
             function insertChar(ch) {
-                const pos = activeInput.selectionStart;
-                activeInput.value = activeInput.value.slice(0, pos) + ch + activeInput.value.slice(activeInput.selectionEnd);
-                activeInput.setSelectionRange(pos + 1, pos + 1);
+                activeInput.value += ch;
             }
 
             function showKeyboard(input) {

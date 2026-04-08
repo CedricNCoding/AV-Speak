@@ -55,9 +55,9 @@ echo ""
 info "[1/10] Installation des dependances systeme..."
 apt update -qq
 apt install -y -qq \
-    python3 python3-pip python3-venv \
-    wget curl \
-    xorg openbox chromium-browser unclutter \
+    python3 python3-pip python3-venv python3-dev build-essential \
+    wget curl git \
+    xorg openbox chromium unclutter \
     pulseaudio alsa-utils x11-xserver-utils > /dev/null 2>&1
 info "Dependances installees."
 
@@ -89,7 +89,12 @@ else
     tar xzf piper.tar.gz -C "$INSTALL_DIR/"
     rm piper.tar.gz
     chmod +x "$INSTALL_DIR/piper/piper"
-    info "Piper installe."
+    # Verification
+    if "$INSTALL_DIR/piper/piper" --help > /dev/null 2>&1; then
+        info "Piper installe et fonctionnel."
+    else
+        warn "Piper installe mais verification echouee (librairies manquantes ?)."
+    fi
 fi
 
 # --- 1.4 Voix francaise ---
@@ -208,7 +213,7 @@ for i in \$(seq 1 60); do
 done
 
 # Chromium en mode kiosque tactile
-chromium-browser \\
+chromium \\
     --noerrdialogs \\
     --disable-infobars \\
     --kiosk \\

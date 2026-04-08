@@ -1,293 +1,178 @@
 # AV-Speak - Guide de deploiement
 
-## Pre-requis sur le PC cible
+## Pre-requis
 
-- Windows 10/11 (64 bits) ou Linux (Debian/Ubuntu recommande)
+- **Ubuntu Server 24.04 LTS** (64 bits)
+- Connexion internet (pour l'installation uniquement)
 - Haut-parleurs connectes et fonctionnels
 - Ecran tactile (ou souris pour les tests)
-- Pas besoin d'internet en fonctionnement
 
 ---
 
-# Installation Windows
+## Installation rapide (recommande)
 
-## Installation (a faire UNE seule fois, avec internet)
+Un seul script installe tout : application, TTS, kiosque, demarrage automatique.
 
-### Etape 1 : Installer Python
+```bash
+# 1. Cloner le projet
+git clone https://github.com/CedricNCoding/AV-Speak.git
+cd AV-Speak
 
-1. Telecharger Python 3.11+ depuis https://www.python.org/downloads/
-2. Lancer l'installeur
-3. **IMPORTANT** : Cocher "Add Python to PATH" en bas de l'ecran
-4. Cliquer "Install Now"
+# 2. Lancer l'installation complete
+sudo bash installation-complete.sh
 
-### Etape 2 : Copier le projet
-
-Copier tout le dossier `AV-Speak` sur le PC (par cle USB par exemple) dans un endroit simple, ex :
-```
-C:\AV-Speak\
+# 3. Redemarrer
+sudo reboot
 ```
 
-### Etape 3 : Installer Piper TTS
-
-1. Telecharger Piper pour Windows :
-   https://github.com/rhasspy/piper/releases
-   -> Prendre le fichier `piper_windows_amd64.zip`
-
-2. Extraire le contenu dans `C:\AV-Speak\piper\`
-   Vous devez avoir : `C:\AV-Speak\piper\piper.exe`
-
-3. Telecharger la voix francaise :
-   https://huggingface.co/rhasspy/piper-voices/resolve/main/fr/fr_FR/siwis/medium/fr_FR-siwis-medium.onnx
-   et
-   https://huggingface.co/rhasspy/piper-voices/resolve/main/fr/fr_FR/siwis/medium/fr_FR-siwis-medium.onnx.json
-
-4. Placer les 2 fichiers dans `C:\AV-Speak\piper\`
-
-Structure attendue :
-```
-C:\AV-Speak\
-  piper\
-    piper.exe
-    (autres fichiers extraits du zip)
-    fr_FR-siwis-medium.onnx
-    fr_FR-siwis-medium.onnx.json
-  static\
-  templates\
-  app.py
-  requirements.txt
-```
-
-### Etape 4 : Installer les dependances Python
-
-Ouvrir un terminal (cmd) et taper :
-```
-cd C:\AV-Speak
-pip install -r requirements.txt
-```
-
-### Etape 5 : Premier lancement (test)
-
-```
-cd C:\AV-Speak
-python app.py
-```
-
-Ouvrir un navigateur sur : http://127.0.0.1:8000
-
-- Page d'accueil = le kiosk (ecran tactile)
-- Admin : http://127.0.0.1:8000/admin/login
-  - Identifiant : `admin`
-  - Mot de passe : `admin`
-  - **Changez le mot de passe immediatement !**
-
-## Lancement automatique au demarrage (Windows)
-
-### Option A : Script de lancement (recommande)
-
-Creer un fichier `lancer.bat` dans `C:\AV-Speak\` :
-
-```bat
-@echo off
-cd /d C:\AV-Speak
-start /min python app.py
-timeout /t 3 >nul
-start "" "http://127.0.0.1:8000"
-```
-
-Pour qu'il se lance au demarrage :
-1. Appuyer sur `Win + R`
-2. Taper `shell:startup` et Entree
-3. Copier un raccourci de `lancer.bat` dans ce dossier
-
-### Option B : Navigateur en mode kiosk (Windows)
-
-Pour un affichage plein ecran permanent (ecran tactile) :
-
-```bat
-@echo off
-cd /d C:\AV-Speak
-start /min python app.py
-timeout /t 3 >nul
-start "" chrome --kiosk --disable-pinch --overscroll-history-navigation=0 "http://127.0.0.1:8000"
-```
-
-(Remplacer `chrome` par le chemin complet si necessaire :
-`"C:\Program Files\Google\Chrome\Application\chrome.exe"`)
+C'est tout. Au redemarrage :
+- **AV-Speak** demarre automatiquement (service systemd)
+- **L'ecran kiosque** s'ouvre en plein ecran sur l'application
 
 ---
 
-# Installation Linux (Debian / Ubuntu)
+## Acces a l'application
 
-## Installation (a faire UNE seule fois, avec internet)
+| Page | URL |
+|------|-----|
+| Kiosque (visiteurs) | `http://IP-DE-LA-MACHINE:8000` |
+| Administration | `http://IP-DE-LA-MACHINE:8000/admin/login` |
 
-### Etape 1 : Installer les dependances systeme
+**Identifiants par defaut** : `admin` / `admin` — **a changer immediatement !**
+
+---
+
+## Ce que fait le script d'installation
+
+1. Installe les dependances systeme (Python 3, Chromium, X11, PulseAudio, etc.)
+2. Copie l'application dans `/opt/av-speak`
+3. Telecharge et installe Piper TTS + voix francaise
+4. Cree un environnement virtuel Python et installe les dependances
+5. Cree un service systemd `av-speak` (demarrage automatique au boot)
+6. Cree un utilisateur `kiosk` avec auto-login sur TTY1
+7. Configure X11/Openbox/Chromium en mode kiosque verrouille
+8. Regle le volume audio a 80%
+
+---
+
+## Structure des fichiers installes
+
+```
+/opt/av-speak/
+  app.py                    # Application FastAPI
+  requirements.txt          # Dependances Python
+  av_speak.db               # Base de donnees SQLite (creee au 1er lancement)
+  venv/                     # Environnement virtuel Python
+  piper/
+    piper                   # Binaire TTS
+    fr_FR-siwis-medium.onnx # Modele de voix francaise
+  static/                   # Fichiers statiques (CSS, logos)
+  templates/                # Templates HTML
+  tts_cache/                # Cache des fichiers audio generes
+```
+
+---
+
+## Commandes utiles
+
+### Application AV-Speak
 
 ```bash
-sudo apt update
-sudo apt install -y python3 python3-pip python3-venv libsdl2-mixer-2.0-0 libsdl2-2.0-0 chromium-browser
+# Statut du service
+sudo systemctl status av-speak
+
+# Redemarrer l'application
+sudo systemctl restart av-speak
+
+# Arreter l'application
+sudo systemctl stop av-speak
+
+# Voir les logs en direct
+sudo journalctl -u av-speak -f
 ```
 
-### Etape 2 : Copier le projet
-
-Copier le dossier `AV-Speak` sur le PC (cle USB, scp, etc.) :
-```bash
-cp -r /media/usb/AV-Speak /opt/av-speak
-cd /opt/av-speak
-```
-
-### Etape 3 : Installer Piper TTS
-
-```bash
-# Telecharger Piper
-wget https://github.com/rhasspy/piper/releases/download/2023.11.14-2/piper_linux_x86_64.tar.gz
-tar xzf piper_linux_x86_64.tar.gz -C /opt/av-speak/
-# Le binaire se retrouve dans /opt/av-speak/piper/piper
-
-# Telecharger la voix francaise
-wget -P /opt/av-speak/piper/ \
-  https://huggingface.co/rhasspy/piper-voices/resolve/main/fr/fr_FR/siwis/medium/fr_FR-siwis-medium.onnx
-wget -P /opt/av-speak/piper/ \
-  https://huggingface.co/rhasspy/piper-voices/resolve/main/fr/fr_FR/siwis/medium/fr_FR-siwis-medium.onnx.json
-
-# Rendre le binaire executable
-chmod +x /opt/av-speak/piper/piper
-```
-
-### Etape 4 : Creer un environnement virtuel et installer les dependances
+### Kiosque
 
 ```bash
-cd /opt/av-speak
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
+# Acceder au terminal (depuis l'ecran kiosque)
+Ctrl+Alt+F2
+
+# Revenir au kiosque
+Ctrl+Alt+F1
+
+# Regler le volume
+amixer sset Master 90%
 ```
 
-### Etape 5 : Premier lancement (test)
+### Mise a jour
 
 ```bash
-cd /opt/av-speak
-source venv/bin/activate
-python app.py
+cd /chemin/vers/AV-Speak   # ou le repo a ete clone
+git pull
+sudo cp app.py /opt/av-speak/
+sudo cp -r templates/ /opt/av-speak/
+sudo cp -r static/ /opt/av-speak/
+sudo systemctl restart av-speak
 ```
 
-Ouvrir un navigateur sur : http://127.0.0.1:8000
+---
 
-- Identifiants admin par defaut : `admin` / `admin`
-- **Changez le mot de passe immediatement !**
+## Maintenance / Acces distant
 
-## Lancement automatique au demarrage (Linux)
+L'administration se fait a distance via :
 
-### Option A : Service systemd (recommande)
+- **SSH** : `ssh utilisateur@IP-DE-LA-MACHINE`
+- **Interface admin** : `http://IP-DE-LA-MACHINE:8000/admin/login`
 
-Creer le fichier `/etc/systemd/system/av-speak.service` :
+Pour acceder au terminal local depuis la borne : `Ctrl+Alt+F2`
 
-```ini
-[Unit]
-Description=AV-Speak Accueil
-After=network.target sound.target
+---
 
-[Service]
-Type=simple
-User=root
-WorkingDirectory=/opt/av-speak
-ExecStart=/opt/av-speak/venv/bin/python app.py
-Restart=always
-RestartSec=5
-Environment=DISPLAY=:0
-Environment=SDL_AUDIODRIVER=alsa
+## Configuration initiale
 
-[Install]
-WantedBy=multi-user.target
-```
+1. Se connecter a l'admin (`admin` / `admin`)
+2. Accepter les CGU
+3. **Changer le mot de passe** (onglet Mot de passe)
+4. Ajouter les contacts (onglet Contacts) : manuellement ou import CSV
+5. Personnaliser l'apparence (onglet Apparence) : logo, couleurs, phrase d'annonce
+6. Configurer les notifications email/SMS si necessaire (onglet Notifications)
+7. Activer le registre de securite si souhaite (onglet Registre)
 
-Activer et demarrer :
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable av-speak
-sudo systemctl start av-speak
-```
+### Format CSV pour import de contacts
 
-### Option B : Navigateur en mode kiosk (Linux)
-
-Creer un fichier `/opt/av-speak/lancer.sh` :
-
-```bash
-#!/bin/bash
-cd /opt/av-speak
-source venv/bin/activate
-python app.py &
-sleep 3
-chromium-browser --kiosk --disable-pinch --noerrdialogs \
-  --disable-infobars --disable-session-crashed-bubble \
-  "http://127.0.0.1:8000"
-```
-
-```bash
-chmod +x /opt/av-speak/lancer.sh
-```
-
-Pour lancer au demarrage avec le bureau (autostart) :
-
-```bash
-mkdir -p ~/.config/autostart
-cat > ~/.config/autostart/av-speak.desktop << 'EOF'
-[Desktop Entry]
-Type=Application
-Name=AV-Speak
-Exec=/opt/av-speak/lancer.sh
-X-GNOME-Autostart-enabled=true
-EOF
-```
-
-## Depannage Linux
-
-| Probleme | Solution |
-|----------|----------|
-| Pas de son | `aplay -l` pour lister les cartes son, verifier `alsamixer` |
-| pygame erreur SDL | `sudo apt install libsdl2-mixer-2.0-0` |
-| Permission piper | `chmod +x /opt/av-speak/piper/piper` |
-| Service ne demarre pas | `sudo journalctl -u av-speak -f` pour voir les logs |
-| Chromium ne s'ouvre pas en kiosk | Verifier que `DISPLAY=:0` est defini |
-
-## Configuration
-
-### Ajouter des contacts
-1. Aller sur http://127.0.0.1:8000/admin/login
-2. Se connecter
-3. Onglet "Contacts" : ajouter manuellement ou importer un CSV
-
-### Format CSV pour import
 Fichier `.csv` avec separateur point-virgule :
 ```
-Nom;Prenom;Email;Telephone
-Dupont;Jean;jean@mail.com;0612345678
-Martin;Marie;marie@mail.com;0698765432
+Nom;Prenom;Civilite;Email;Telephone
+Dupont;Jean;M;jean@mail.com;0612345678
+Martin;Marie;Mme;marie@mail.com;0698765432
 ```
 
-### Personnaliser les couleurs
-1. Admin > Onglet "Apparence"
-2. Choisir les couleurs
-3. Enregistrer
+---
 
 ## Depannage
 
 | Probleme | Solution |
 |----------|----------|
-| "piper non trouve" | Verifier que `piper.exe` est dans `C:\AV-Speak\piper\` |
-| Pas de son | Verifier les haut-parleurs dans les parametres Windows |
-| Page ne charge pas | Verifier que `python app.py` tourne dans le terminal |
-| Erreur au `pip install` | Verifier que Python est installe et dans le PATH |
+| Pas de son | `aplay -l` pour lister les cartes son, `amixer sset Master 80%` |
+| Piper ne fonctionne pas | `chmod +x /opt/av-speak/piper/piper` puis tester : `/opt/av-speak/piper/piper --help` |
+| Service ne demarre pas | `sudo journalctl -u av-speak -f` pour voir les erreurs |
+| Chromium ne s'ouvre pas | Verifier que X est lance : `Ctrl+Alt+F1`, verifier les logs Openbox |
+| Ecran de veille s'active | Les commandes `xset` dans Openbox autostart doivent etre presentes |
+| Clavier virtuel absent | Chromium doit etre lance avec `--enable-features=VirtualKeyboard` |
+| Base corrompue | Supprimer `/opt/av-speak/av_speak.db` et redemarrer (repart a zero) |
+
+---
 
 ## Architecture
 
 ```
-Navigateur (kiosk plein ecran)
+Ecran tactile (Chromium kiosk)
     |
     v
 FastAPI (port 8000) --- SQLite (av_speak.db)
     |
     v
-Piper TTS --> WAV --> pygame --> Haut-parleurs
+Piper TTS --> WAV --> Navigateur (audio HTML5)
 ```
 
-Tout tourne en local sur le meme PC. Aucune connexion internet necessaire en fonctionnement.
+Tout tourne en local sur la meme machine. Aucune connexion internet necessaire en fonctionnement.

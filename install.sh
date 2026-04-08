@@ -122,16 +122,16 @@ cat > "$INSTALL_DIR/lancer-kiosk.sh" << 'KIOSK'
 sleep 2
 
 # Chercher un navigateur disponible
-if command -v chromium-browser &> /dev/null; then
-    BROWSER="chromium-browser"
-elif command -v chromium &> /dev/null; then
+if command -v chromium &> /dev/null; then
+    BROWSER="chromium"
+elif command -v chromium-browser &> /dev/null; then
     BROWSER="chromium"
 elif command -v google-chrome &> /dev/null; then
     BROWSER="google-chrome"
 elif command -v firefox &> /dev/null; then
     BROWSER="firefox"
 else
-    echo "Aucun navigateur trouve. Installez chromium-browser."
+    echo "Aucun navigateur trouve. Installez chromium."
     exit 1
 fi
 

@@ -38,7 +38,7 @@ apt update
 apt install -y \
     xorg \
     openbox \
-    chromium-browser \
+    chromium \
     unclutter \
     pulseaudio \
     alsa-utils \
@@ -94,7 +94,7 @@ for i in \$(seq 1 60); do
 done
 
 # Chromium en mode kiosque tactile
-chromium-browser \\
+chromium \\
     --noerrdialogs \\
     --disable-infobars \\
     --kiosk \\

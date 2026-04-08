@@ -40,6 +40,7 @@ apt install -y \
     openbox \
     chromium \
     unclutter \
+    onboard \
     pulseaudio \
     alsa-utils \
     x11-xserver-utils
@@ -84,6 +85,9 @@ unclutter -idle 1 -root &
 # Demarrer PulseAudio
 pulseaudio --start 2>/dev/null &
 
+# Clavier virtuel tactile
+onboard --theme=Droid --layout=Phone --size=800x250 &
+
 # Attendre que l'appli AV-Speak soit prete sur le port 8000
 echo "Attente de AV-Speak sur ${APP_URL}..."
 for i in \$(seq 1 60); do
@@ -104,7 +108,6 @@ chromium \\
     --disable-session-crashed-bubble \\
     --disable-component-update \\
     --autoplay-policy=no-user-gesture-required \\
-    --enable-features=VirtualKeyboard \\
     --disable-pinch \\
     --overscroll-history-navigation=0 \\
     --check-for-update-interval=31536000 \\

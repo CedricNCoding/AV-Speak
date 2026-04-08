@@ -57,7 +57,7 @@ apt update -qq
 apt install -y -qq \
     python3 python3-pip python3-venv python3-dev build-essential \
     wget curl git \
-    xorg openbox chromium unclutter \
+    xorg openbox chromium unclutter onboard \
     pulseaudio alsa-utils x11-xserver-utils > /dev/null 2>&1
 info "Dependances installees."
 
@@ -203,6 +203,9 @@ unclutter -idle 1 -root &
 # Demarrer PulseAudio
 pulseaudio --start 2>/dev/null &
 
+# Clavier virtuel tactile (apparait au focus sur un champ texte)
+onboard --theme=Droid --layout=Phone --size=800x250 &
+
 # Attendre que l'appli AV-Speak soit prete (max 60s)
 echo "Attente de AV-Speak sur ${APP_URL}..."
 for i in \$(seq 1 60); do
@@ -223,7 +226,6 @@ chromium \\
     --disable-session-crashed-bubble \\
     --disable-component-update \\
     --autoplay-policy=no-user-gesture-required \\
-    --enable-features=VirtualKeyboard \\
     --disable-pinch \\
     --overscroll-history-navigation=0 \\
     --check-for-update-interval=31536000 \\
@@ -254,7 +256,15 @@ RCXML
 
 chown -R ${KIOSK_USER}:${KIOSK_USER} /home/${KIOSK_USER}/.config
 
-# --- 2.5 Audio ---
+# --- 2.5 Configuration Onboard (clavier virtuel) ---
+mkdir -p /home/${KIOSK_USER}/.config/dconf
+sudo -u ${KIOSK_USER} dbus-launch dconf write /org/onboard/auto-show/enabled true 2>/dev/null || true
+sudo -u ${KIOSK_USER} dbus-launch dconf write /org/onboard/theme "\"Droid\"" 2>/dev/null || true
+sudo -u ${KIOSK_USER} dbus-launch dconf write /org/onboard/layout "\"Phone\"" 2>/dev/null || true
+sudo -u ${KIOSK_USER} dbus-launch dconf write /org/onboard/icon-palette/in-use false 2>/dev/null || true
+chown -R ${KIOSK_USER}:${KIOSK_USER} /home/${KIOSK_USER}/.config
+
+# --- 2.6 Audio ---
 info "[10/10] Configuration audio..."
 sudo -u ${KIOSK_USER} amixer sset Master 80% 2>/dev/null || true
 

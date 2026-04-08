@@ -13,6 +13,8 @@
 
 Un seul script installe tout : application, TTS, kiosque, demarrage automatique.
 
+sudo apt update && sudo apt install git -y
+
 ```bash
 # 1. Cloner le projet
 git clone https://github.com/CedricNCoding/AV-Speak.git

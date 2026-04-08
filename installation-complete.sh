@@ -57,7 +57,7 @@ apt update -qq
 apt install -y -qq \
     python3 python3-pip python3-venv python3-dev build-essential \
     wget curl git \
-    xorg openbox chromium unclutter onboard \
+    xorg openbox chromium unclutter onboard at-spi2-core dbus-x11 \
     pulseaudio alsa-utils x11-xserver-utils > /dev/null 2>&1
 info "Dependances installees."
 
@@ -178,6 +178,10 @@ info "[9/10] Configuration du demarrage X + Openbox..."
 
 cat > /home/${KIOSK_USER}/.bash_profile << 'BASHPROFILE'
 if [ -z "$DISPLAY" ] && [ "$(tty)" = "/dev/tty1" ]; then
+    export GTK_MODULES=gail:atk-bridge
+    export QT_ACCESSIBILITY=1
+    export QT_LINUX_ACCESSIBILITY_ALWAYS_ON=1
+    export ACCESSIBILITY_ENABLED=1
     exec startx -- -nocursor 2>/dev/null
 fi
 BASHPROFILE
@@ -203,8 +207,13 @@ unclutter -idle 1 -root &
 # Demarrer PulseAudio
 pulseaudio --start 2>/dev/null &
 
+# Demarrer le bus d'accessibilite
+/usr/libexec/at-spi-bus-launcher --launch-immediately &
+sleep 1
+
 # Clavier virtuel tactile (apparait au focus sur un champ texte)
 onboard --theme=Droid --layout=Phone --size=800x250 &
+sleep 1
 
 # Attendre que l'appli AV-Speak soit prete (max 60s)
 echo "Attente de AV-Speak sur ${APP_URL}..."

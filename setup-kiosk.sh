@@ -41,6 +41,8 @@ apt install -y \
     chromium \
     unclutter \
     onboard \
+    at-spi2-core \
+    dbus-x11 \
     pulseaudio \
     alsa-utils \
     x11-xserver-utils
@@ -59,6 +61,10 @@ EOF
 echo "[4/6] Configuration du demarrage X..."
 cat > /home/${KIOSK_USER}/.bash_profile << 'BASHPROFILE'
 if [ -z "$DISPLAY" ] && [ "$(tty)" = "/dev/tty1" ]; then
+    export GTK_MODULES=gail:atk-bridge
+    export QT_ACCESSIBILITY=1
+    export QT_LINUX_ACCESSIBILITY_ALWAYS_ON=1
+    export ACCESSIBILITY_ENABLED=1
     exec startx -- -nocursor 2>/dev/null
 fi
 BASHPROFILE
@@ -85,8 +91,13 @@ unclutter -idle 1 -root &
 # Demarrer PulseAudio
 pulseaudio --start 2>/dev/null &
 
+# Demarrer le bus d'accessibilite
+/usr/libexec/at-spi-bus-launcher --launch-immediately &
+sleep 1
+
 # Clavier virtuel tactile
 onboard --theme=Droid --layout=Phone --size=800x250 &
+sleep 1
 
 # Attendre que l'appli AV-Speak soit prete sur le port 8000
 echo "Attente de AV-Speak sur ${APP_URL}..."

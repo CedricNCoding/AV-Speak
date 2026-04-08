@@ -28,6 +28,26 @@
         }
         .visitor-fields input:focus { border-color: var(--color-primary); outline: none; }
         .visitor-notice { font-size: 0.8rem; color: #999; text-align: center; margin-top: 5px; }
+
+        /* Clavier virtuel */
+        .vkb-overlay {
+            display: none; position: fixed; bottom: 0; left: 0; right: 0;
+            background: #d1d5db; padding: 8px 4px 12px; z-index: 10000;
+            box-shadow: 0 -2px 10px rgba(0,0,0,0.2);
+        }
+        .vkb-overlay.active { display: block; }
+        .vkb-row { display: flex; justify-content: center; gap: 4px; margin-bottom: 4px; }
+        .vkb-key {
+            min-width: 42px; height: 48px; border: none; border-radius: 6px;
+            background: #fff; color: #333; font-size: 1.1rem; font-weight: 500;
+            cursor: pointer; display: flex; align-items: center; justify-content: center;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.15); user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .vkb-key:active { background: #c7cbd1; }
+        .vkb-key.wide { min-width: 70px; font-size: 0.85rem; background: #bcc0c7; }
+        .vkb-key.space { flex: 1; max-width: 320px; }
+        .vkb-key.active-shift { background: var(--color-primary); color: #fff; }
     </style>
 </head>
 <body class="kiosk-body">
@@ -400,6 +420,146 @@
             loadVisitors();
             setInterval(loadVisitors, 15000);
         }
+
+        // --- Virtual Keyboard ---
+        (function() {
+            const KB_ROWS_LOWER = [
+                ['a','z','e','r','t','y','u','i','o','p'],
+                ['q','s','d','f','g','h','j','k','l','m'],
+                ['{shift}','w','x','c','v','b','n',',','.','{bksp}'],
+                ['{hide}','@','{space}','-','{enter}']
+            ];
+            const KB_ROWS_UPPER = [
+                ['A','Z','E','R','T','Y','U','I','O','P'],
+                ['Q','S','D','F','G','H','J','K','L','M'],
+                ['{shift}','W','X','C','V','B','N','?','!','{bksp}'],
+                ['{hide}','@','{space}','-','{enter}']
+            ];
+
+            const overlay = document.createElement('div');
+            overlay.className = 'vkb-overlay';
+            document.body.appendChild(overlay);
+
+            let activeInput = null;
+            let shifted = false;
+
+            function buildKeyboard() {
+                const rows = shifted ? KB_ROWS_UPPER : KB_ROWS_LOWER;
+                overlay.innerHTML = '';
+                rows.forEach(row => {
+                    const rowDiv = document.createElement('div');
+                    rowDiv.className = 'vkb-row';
+                    row.forEach(key => {
+                        const btn = document.createElement('button');
+                        btn.className = 'vkb-key';
+                        btn.setAttribute('type', 'button');
+                        if (key === '{space}') {
+                            btn.textContent = 'Espace';
+                            btn.classList.add('space');
+                        } else if (key === '{bksp}') {
+                            btn.innerHTML = '&#9003;';
+                            btn.classList.add('wide');
+                        } else if (key === '{shift}') {
+                            btn.innerHTML = '&#8679;';
+                            btn.classList.add('wide');
+                            if (shifted) btn.classList.add('active-shift');
+                        } else if (key === '{enter}') {
+                            btn.textContent = 'OK';
+                            btn.classList.add('wide');
+                        } else if (key === '{hide}') {
+                            btn.innerHTML = '&#9660;';
+                            btn.classList.add('wide');
+                        } else {
+                            btn.textContent = key;
+                        }
+                        btn.addEventListener('touchstart', function(e) {
+                            e.preventDefault();
+                            handleKey(key);
+                        });
+                        btn.addEventListener('mousedown', function(e) {
+                            e.preventDefault();
+                            handleKey(key);
+                        });
+                        rowDiv.appendChild(btn);
+                    });
+                    overlay.appendChild(rowDiv);
+                });
+            }
+
+            function handleKey(key) {
+                if (!activeInput) return;
+                if (key === '{bksp}') {
+                    const pos = activeInput.selectionStart;
+                    if (pos > 0) {
+                        activeInput.value = activeInput.value.slice(0, pos - 1) + activeInput.value.slice(pos);
+                        activeInput.setSelectionRange(pos - 1, pos - 1);
+                    }
+                } else if (key === '{shift}') {
+                    shifted = !shifted;
+                    buildKeyboard();
+                    return;
+                } else if (key === '{enter}') {
+                    hideKeyboard();
+                    activeInput.blur();
+                    return;
+                } else if (key === '{hide}') {
+                    hideKeyboard();
+                    return;
+                } else if (key === '{space}') {
+                    insertChar(' ');
+                } else {
+                    insertChar(key);
+                    if (shifted) { shifted = false; buildKeyboard(); }
+                }
+                activeInput.dispatchEvent(new Event('input', {bubbles: true}));
+            }
+
+            function insertChar(ch) {
+                const pos = activeInput.selectionStart;
+                activeInput.value = activeInput.value.slice(0, pos) + ch + activeInput.value.slice(activeInput.selectionEnd);
+                activeInput.setSelectionRange(pos + 1, pos + 1);
+            }
+
+            function showKeyboard(input) {
+                activeInput = input;
+                shifted = false;
+                buildKeyboard();
+                overlay.classList.add('active');
+                document.body.style.paddingBottom = overlay.offsetHeight + 'px';
+            }
+
+            function hideKeyboard() {
+                overlay.classList.remove('active');
+                document.body.style.paddingBottom = '';
+                activeInput = null;
+            }
+
+            document.addEventListener('focusin', function(e) {
+                if (e.target.matches('input[type="text"], input[type="email"], input[type="tel"], input[type="search"], input:not([type]), textarea')) {
+                    showKeyboard(e.target);
+                }
+            });
+
+            document.addEventListener('focusout', function(e) {
+                setTimeout(() => {
+                    if (!document.activeElement || !document.activeElement.matches('input, textarea')) {
+                        // Don't hide immediately - user might be tapping a key
+                    }
+                }, 200);
+            });
+
+            // Hide keyboard when tapping outside inputs and keyboard
+            document.addEventListener('touchstart', function(e) {
+                if (activeInput && !e.target.matches('input, textarea') && !e.target.closest('.vkb-overlay')) {
+                    hideKeyboard();
+                }
+            });
+            document.addEventListener('click', function(e) {
+                if (activeInput && !e.target.matches('input, textarea') && !e.target.closest('.vkb-overlay')) {
+                    hideKeyboard();
+                }
+            });
+        })();
     </script>
 </body>
 </html>

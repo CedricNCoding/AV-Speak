@@ -57,7 +57,7 @@ apt update -qq
 apt install -y -qq \
     python3 python3-pip python3-venv python3-dev build-essential \
     wget curl git \
-    xorg openbox chromium unclutter onboard at-spi2-core dbus-x11 \
+    xorg openbox chromium unclutter \
     pulseaudio alsa-utils x11-xserver-utils > /dev/null 2>&1
 info "Dependances installees."
 
@@ -178,10 +178,6 @@ info "[9/10] Configuration du demarrage X + Openbox..."
 
 cat > /home/${KIOSK_USER}/.bash_profile << 'BASHPROFILE'
 if [ -z "$DISPLAY" ] && [ "$(tty)" = "/dev/tty1" ]; then
-    export GTK_MODULES=gail:atk-bridge
-    export QT_ACCESSIBILITY=1
-    export QT_LINUX_ACCESSIBILITY_ALWAYS_ON=1
-    export ACCESSIBILITY_ENABLED=1
     exec startx -- -nocursor 2>/dev/null
 fi
 BASHPROFILE
@@ -206,14 +202,6 @@ unclutter -idle 1 -root &
 
 # Demarrer PulseAudio
 pulseaudio --start 2>/dev/null &
-
-# Demarrer le bus d'accessibilite
-/usr/libexec/at-spi-bus-launcher --launch-immediately &
-sleep 1
-
-# Clavier virtuel tactile (apparait au focus sur un champ texte)
-onboard --theme=Droid --layout=Phone --size=800x250 &
-sleep 1
 
 # Attendre que l'appli AV-Speak soit prete (max 60s)
 echo "Attente de AV-Speak sur ${APP_URL}..."
@@ -259,29 +247,13 @@ cat > /home/${KIOSK_USER}/.config/openbox/rc.xml << 'RCXML'
       <decor>no</decor>
       <fullscreen>yes</fullscreen>
     </application>
-    <application name="onboard">
-      <decor>no</decor>
-      <fullscreen>no</fullscreen>
-      <layer>above</layer>
-      <skip_taskbar>yes</skip_taskbar>
-      <skip_pager>yes</skip_pager>
-      <focus>no</focus>
-    </application>
   </applications>
 </openbox_config>
 RCXML
 
 chown -R ${KIOSK_USER}:${KIOSK_USER} /home/${KIOSK_USER}/.config
 
-# --- 2.5 Configuration Onboard (clavier virtuel) ---
-mkdir -p /home/${KIOSK_USER}/.config/dconf
-sudo -u ${KIOSK_USER} dbus-launch dconf write /org/onboard/auto-show/enabled true 2>/dev/null || true
-sudo -u ${KIOSK_USER} dbus-launch dconf write /org/onboard/theme "\"Droid\"" 2>/dev/null || true
-sudo -u ${KIOSK_USER} dbus-launch dconf write /org/onboard/layout "\"Phone\"" 2>/dev/null || true
-sudo -u ${KIOSK_USER} dbus-launch dconf write /org/onboard/icon-palette/in-use false 2>/dev/null || true
-chown -R ${KIOSK_USER}:${KIOSK_USER} /home/${KIOSK_USER}/.config
-
-# --- 2.6 Audio ---
+# --- 2.5 Audio ---
 info "[10/10] Configuration audio..."
 sudo -u ${KIOSK_USER} amixer sset Master 80% 2>/dev/null || true
 

@@ -259,6 +259,14 @@ cat > /home/${KIOSK_USER}/.config/openbox/rc.xml << 'RCXML'
       <decor>no</decor>
       <fullscreen>yes</fullscreen>
     </application>
+    <application name="onboard">
+      <decor>no</decor>
+      <fullscreen>no</fullscreen>
+      <layer>above</layer>
+      <skip_taskbar>yes</skip_taskbar>
+      <skip_pager>yes</skip_pager>
+      <focus>no</focus>
+    </application>
   </applications>
 </openbox_config>
 RCXML

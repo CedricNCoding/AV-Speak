@@ -234,12 +234,13 @@ body {
 /* Admin link */
 .admin-link {
     position: fixed;
-    bottom: 10px;
+    top: 10px;
     right: 15px;
     font-size: 0.8rem;
     opacity: 0.3;
     text-decoration: none;
     color: inherit;
+    z-index: 100;
 }
 
 /* --- Admin --- */

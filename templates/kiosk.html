@@ -36,7 +36,7 @@
             box-shadow: 0 -2px 10px rgba(0,0,0,0.2);
         }
         .vkb-overlay.active { display: block; }
-        .vkb-row { display: flex; justify-content: center; gap: 4px; margin-bottom: 4px; }
+        .vkb-row { display: flex; justify-content: center; gap: var(--vkb-gap, 4px); margin-bottom: var(--vkb-gap, 4px); }
         .vkb-key {
             min-width: 36px; height: var(--vkb-key-h, 48px); border: none; border-radius: 6px;
             background: #fff; color: #333; font-size: var(--vkb-font, 1.1rem); font-weight: 500;
@@ -45,7 +45,7 @@
             -webkit-tap-highlight-color: transparent;
         }
         .vkb-key:active { background: #c7cbd1; }
-        .vkb-key.wide { min-width: 70px; font-size: 0.85rem; background: #bcc0c7; }
+        .vkb-key.wide { min-width: 70px; background: #bcc0c7; }
         .vkb-key.space { flex: 1; max-width: 320px; }
         .vkb-key.active-shift { background: var(--color-primary); color: #fff; }
         .vkb-toolbar { display: flex; justify-content: center; gap: 8px; margin-bottom: 6px; }

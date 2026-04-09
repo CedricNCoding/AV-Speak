@@ -123,6 +123,8 @@ def init_db():
         # Kiosk instruction text/image
         "kiosk_instruction": "",
         "kiosk_image_url": "",
+        # Virtual keyboard
+        "keyboard_size": "M",
         # Security register
         "security_register_enabled": "0",
         "security_register_history": "1",
@@ -659,7 +661,7 @@ async def admin_update_settings(request: Request):
                 "ovh_consumer_key", "ovh_sms_service", "ovh_sms_sender", "sms_body",
                 "notif_on_announce",
                 "repeat_count", "repeat_delay",
-                "contact_fields_enabled", "kiosk_instruction",
+                "contact_fields_enabled", "kiosk_instruction", "keyboard_size",
                 "security_register_enabled", "security_register_history"):
         value = form.get(key)
         if value is not None:

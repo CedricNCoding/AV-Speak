@@ -228,6 +228,20 @@
             </div>
 
             <div class="settings-group">
+                <h3>Clavier virtuel</h3>
+                <div class="color-row">
+                    <label>Taille du clavier</label>
+                    <select name="keyboard_size" style="width:200px;">
+                        <option value="S" {% if settings.get('keyboard_size','M') == 'S' %}selected{% endif %}>S — Petit</option>
+                        <option value="M" {% if settings.get('keyboard_size','M') == 'M' %}selected{% endif %}>M — Moyen</option>
+                        <option value="L" {% if settings.get('keyboard_size','M') == 'L' %}selected{% endif %}>L — Grand</option>
+                        <option value="XL" {% if settings.get('keyboard_size','M') == 'XL' %}selected{% endif %}>XL — Tr&egrave;s grand</option>
+                        <option value="XXL" {% if settings.get('keyboard_size','M') == 'XXL' %}selected{% endif %}>XXL — 4K / &eacute;cran large</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="settings-group">
                 <h3>Texte d'instruction (kiosk)</h3>
                 <p style="font-size:0.85rem; color:#888; margin-bottom:10px;">
                     Ce texte sera affich&eacute; sur le kiosk pour expliquer la proc&eacute;dure au visiteur.

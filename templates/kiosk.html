@@ -38,15 +38,15 @@
         .vkb-overlay.active { display: block; }
         .vkb-row { display: flex; justify-content: center; gap: var(--vkb-gap, 4px); margin-bottom: var(--vkb-gap, 4px); }
         .vkb-key {
-            min-width: 36px; height: var(--vkb-key-h, 48px); border: none; border-radius: 6px;
-            background: #fff; color: #333; font-size: var(--vkb-font, 1.1rem); font-weight: 500;
+            min-width: var(--vkb-key-w, 58px); height: var(--vkb-key-h, 68px); border: none; border-radius: 6px;
+            background: #fff; color: #333; font-size: var(--vkb-font, 1.2rem); font-weight: 500;
             cursor: pointer; display: flex; align-items: center; justify-content: center;
             box-shadow: 0 1px 2px rgba(0,0,0,0.15); user-select: none;
             -webkit-tap-highlight-color: transparent;
         }
         .vkb-key:active { background: #c7cbd1; }
-        .vkb-key.wide { min-width: 70px; background: #bcc0c7; }
-        .vkb-key.space { flex: 1; max-width: 320px; }
+        .vkb-key.wide { min-width: var(--vkb-wide, 95px); background: #bcc0c7; }
+        .vkb-key.space { flex: 1; max-width: 450px; }
         .vkb-key.active-shift { background: var(--color-primary); color: #fff; }
         .vkb-toggle {
             position: fixed; bottom: 10px; right: 10px; z-index: 9999;
@@ -447,11 +447,11 @@
             ];
 
             const SIZES = {
-                S:   { key: 52, font: 1.0,  gap: 3 },
-                M:   { key: 68, font: 1.2,  gap: 4 },
-                L:   { key: 88, font: 1.5,  gap: 5 },
-                XL:  { key: 108, font: 1.8, gap: 6 },
-                XXL: { key: 130, font: 2.1, gap: 7 },
+                S:   { key: 52, width: 46,  font: 1.0,  gap: 3, wide: 80  },
+                M:   { key: 68, width: 58,  font: 1.2,  gap: 4, wide: 95  },
+                L:   { key: 88, width: 76,  font: 1.5,  gap: 5, wide: 120 },
+                XL:  { key: 108, width: 94, font: 1.8, gap: 6, wide: 150 },
+                XXL: { key: 130, width: 114, font: 2.1, gap: 7, wide: 180 },
             };
 
             const currentSize = '{{ settings.get("keyboard_size", "M") }}';
@@ -464,10 +464,12 @@
             let manualToggle = false;
 
             function applySize() {
-                const s = SIZES[currentSize];
+                const s = SIZES[currentSize] || SIZES.M;
                 overlay.style.setProperty('--vkb-key-h', s.key + 'px');
+                overlay.style.setProperty('--vkb-key-w', s.width + 'px');
                 overlay.style.setProperty('--vkb-font', s.font + 'rem');
                 overlay.style.setProperty('--vkb-gap', s.gap + 'px');
+                overlay.style.setProperty('--vkb-wide', s.wide + 'px');
             }
 
             function buildKeyboard() {

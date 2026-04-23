@@ -164,6 +164,30 @@
         </div>
     </div>
 
+    {% if license_status.expired %}
+    <!-- License expired blocker -->
+    <div id="licenseExpired" style="position:fixed; inset:0; background:rgba(198,40,40,0.95); z-index:99999; display:flex; align-items:center; justify-content:center; padding:20px;">
+        <div style="background:#fff; border-radius:20px; padding:40px 50px; text-align:center; max-width:600px; box-shadow:0 8px 40px rgba(0,0,0,0.3);">
+            <div style="font-size:3.5rem; color:#c62828; margin-bottom:10px;">&#9888;</div>
+            <h1 style="color:#c62828; margin:0 0 15px; font-size:2rem;">Licence d'utilisation expir&eacute;e</h1>
+            <p style="font-size:1.1rem; color:#444; margin:0 0 10px;">
+                Le logiciel ne peut plus &ecirc;tre utilis&eacute; tant qu'un nouveau code n'a pas &eacute;t&eacute; saisi.
+            </p>
+            <p style="font-size:0.95rem; color:#888; margin:0 0 25px;">
+                Expir&eacute;e le {{ license_status.expiry }}
+            </p>
+            <a href="/admin/login" style="display:inline-block; padding:14px 32px; background:#c62828; color:#fff; text-decoration:none; border-radius:10px; font-size:1.05rem; font-weight:500;">
+                Acc&egrave;s administrateur
+            </a>
+        </div>
+    </div>
+    {% elif license_status.warning %}
+    <!-- License warning banner -->
+    <div style="position:fixed; top:0; left:0; right:0; background:#fff8e1; border-bottom:2px solid #f9a825; padding:8px 20px; z-index:50; text-align:center; font-size:0.9rem; color:#795548;">
+        &#9888; Votre licence expire dans {{ license_status.days_left }} jour(s) ({{ license_status.expiry }}) — <a href="/admin/login" style="color:#f57f17; font-weight:600;">renouveler</a>
+    </div>
+    {% endif %}
+
     <!-- Custom confirm modal (replaces native confirm dialog) -->
     <div class="modal-overlay" id="customConfirm">
         <div class="modal-box">

@@ -4,6 +4,9 @@ import subprocess
 import secrets
 import smtplib
 import threading
+import hmac
+import hashlib
+from datetime import datetime, timedelta, date
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from pathlib import Path
@@ -18,6 +21,28 @@ from pydantic import BaseModel
 # --- Configuration ---
 BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = BASE_DIR / "av_speak.db"
+
+# --- License ---
+# La cle secrete est lue depuis license_secret.key (non commite sur Git).
+# Cette cle doit etre identique entre le serveur du vendeur et les installations client
+# pour que les codes generes soient valides. NE PAS PUBLIER.
+LICENSE_SECRET_FILE = BASE_DIR / "license_secret.key"
+TRIAL_DAYS = 30
+EXPIRY_WARNING_DAYS = 7
+
+
+def _load_license_secret() -> bytes:
+    """Load license secret from file, or create a random one for trial mode."""
+    if LICENSE_SECRET_FILE.exists():
+        return LICENSE_SECRET_FILE.read_bytes().strip()
+    # Generate a random secret if missing (trial mode - vendor codes won't work)
+    print("AVERTISSEMENT: license_secret.key manquant. Mode essai - les codes vendeur ne fonctionneront pas.")
+    random_key = secrets.token_hex(32).encode()
+    LICENSE_SECRET_FILE.write_bytes(random_key)
+    return random_key
+
+
+LICENSE_SECRET = _load_license_secret()
 TTS_CACHE_DIR = BASE_DIR / "tts_cache"
 PIPER_BIN = BASE_DIR / "piper" / "piper"
 PIPER_MODEL = BASE_DIR / "piper" / "fr_FR-siwis-medium.onnx"
@@ -62,6 +87,11 @@ def init_db():
         CREATE TABLE IF NOT EXISTS settings (
             key TEXT PRIMARY KEY,
             value TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS used_licenses (
+            serial TEXT PRIMARY KEY,
+            days INTEGER NOT NULL,
+            activated_at TEXT NOT NULL
         );
         CREATE TABLE IF NOT EXISTS visitors (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -127,6 +157,9 @@ def init_db():
         "keyboard_size": "M",
         # Kiosk content size
         "kiosk_font_size": "classique",
+        # License
+        "license_expiry": (date.today() + timedelta(days=TRIAL_DAYS)).isoformat(),
+        "license_last_seen": date.today().isoformat(),
         # Security register
         "security_register_enabled": "0",
         "security_register_history": "1",
@@ -147,6 +180,57 @@ init_db()
 def get_settings(conn: sqlite3.Connection) -> dict:
     rows = conn.execute("SELECT key, value FROM settings").fetchall()
     return {row["key"]: row["value"] for row in rows}
+
+
+# --- License management ---
+
+def verify_license_code(code: str) -> tuple[bool, str, int]:
+    """Verifies a license code. Returns (is_valid, serial, days_to_add)."""
+    try:
+        parts = code.strip().upper().replace(" ", "").split("-")
+        if len(parts) != 4 or parts[0] != "AVSP":
+            return False, "", 0
+        serial, days_str, sig = parts[1], parts[2], parts[3]
+        days = int(days_str)
+        if days <= 0 or days > 36500:
+            return False, "", 0
+        payload = f"{serial}-{days}".encode()
+        expected = hmac.new(LICENSE_SECRET, payload, hashlib.sha256).hexdigest()[:8].upper()
+        if not hmac.compare_digest(expected, sig):
+            return False, "", 0
+        return True, serial, days
+    except Exception:
+        return False, "", 0
+
+
+def get_license_status(conn: sqlite3.Connection) -> dict:
+    """Returns {expiry, days_left, expired, warning}."""
+    settings = get_settings(conn)
+    expiry_str = settings.get("license_expiry")
+    try:
+        expiry = date.fromisoformat(expiry_str) if expiry_str else date.today()
+    except Exception:
+        expiry = date.today()
+    today = date.today()
+    # Anti-rollback: if today is before last_seen by more than 1 day, use last_seen as reference
+    last_seen_str = settings.get("license_last_seen")
+    try:
+        last_seen = date.fromisoformat(last_seen_str) if last_seen_str else today
+    except Exception:
+        last_seen = today
+    reference = max(today, last_seen)
+    # Update last_seen if today is more recent
+    if today > last_seen:
+        conn.execute("UPDATE settings SET value = ? WHERE key = ?",
+                     (today.isoformat(), "license_last_seen"))
+        conn.commit()
+    days_left = (expiry - reference).days
+    return {
+        "expiry": expiry.isoformat(),
+        "days_left": days_left,
+        "expired": days_left < 0,
+        "warning": 0 <= days_left <= EXPIRY_WARNING_DAYS,
+    }
 
 
 def require_auth(request: Request):
@@ -328,11 +412,13 @@ async def kiosk(request: Request):
     top_contacts = conn.execute(
         "SELECT * FROM contacts ORDER BY call_count DESC LIMIT 6"
     ).fetchall()
+    license_status = get_license_status(conn)
     conn.close()
     return templates.TemplateResponse("kiosk.html", {
         "request": request,
         "settings": settings,
         "top_contacts": top_contacts,
+        "license_status": license_status,
     })
 
 
@@ -371,6 +457,11 @@ async def top_contacts():
 async def announce(contact_id: int, visitor_name: str = "", visitor_email: str = "",
                    visitor_prenom: str = "", visitor_entreprise: str = ""):
     conn = get_db()
+    # License check
+    lic = get_license_status(conn)
+    if lic["expired"]:
+        conn.close()
+        raise HTTPException(status_code=403, detail="Licence expirée")
     contact = conn.execute("SELECT * FROM contacts WHERE id = ?", (contact_id,)).fetchone()
     if not contact:
         conn.close()
@@ -453,6 +544,15 @@ async def visitor_leave(visitor_id: int):
     conn.commit()
     conn.close()
     return {"status": "ok"}
+
+
+@app.get("/api/license")
+async def api_license_status():
+    """Public endpoint - returns license status for kiosk display."""
+    conn = get_db()
+    status = get_license_status(conn)
+    conn.close()
+    return status
 
 
 @app.get("/api/settings")
@@ -588,6 +688,7 @@ async def admin_page(request: Request):
            FROM visitors v LEFT JOIN contacts c ON v.contact_id = c.id
            WHERE v.left_at IS NOT NULL ORDER BY v.left_at DESC LIMIT 100"""
     ).fetchall()
+    license_status = get_license_status(conn)
     conn.close()
     return templates.TemplateResponse("admin.html", {
         "request": request,
@@ -596,6 +697,7 @@ async def admin_page(request: Request):
         "visitors_present": visitors_present,
         "visitors_history": visitors_history,
         "cgu_text": CGU_TEXT,
+        "license_status": license_status,
     })
 
 
@@ -769,6 +871,33 @@ async def admin_change_password(
     conn.commit()
     conn.close()
     return RedirectResponse(url="/admin", status_code=303)
+
+
+@app.post("/admin/license/activate")
+async def admin_license_activate(request: Request, code: str = Form(...)):
+    require_auth(request)
+    valid, serial, days = verify_license_code(code)
+    if not valid:
+        return JSONResponse({"status": "error", "message": "Code invalide"}, status_code=400)
+    conn = get_db()
+    # Check if already used
+    existing = conn.execute("SELECT serial FROM used_licenses WHERE serial = ?", (serial,)).fetchone()
+    if existing:
+        conn.close()
+        return JSONResponse({"status": "error", "message": "Ce code a deja ete utilise"}, status_code=400)
+    # Compute new expiry: start from today or current expiry (whichever is later)
+    status = get_license_status(conn)
+    current_expiry = date.fromisoformat(status["expiry"])
+    base = max(date.today(), current_expiry) if not status["expired"] else date.today()
+    new_expiry = base + timedelta(days=days)
+    conn.execute("UPDATE settings SET value = ? WHERE key = ?",
+                 (new_expiry.isoformat(), "license_expiry"))
+    conn.execute("INSERT INTO used_licenses (serial, days, activated_at) VALUES (?, ?, ?)",
+                 (serial, days, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+    conn.commit()
+    conn.close()
+    return JSONResponse({"status": "ok", "message": f"Licence etendue de {days} jours",
+                        "new_expiry": new_expiry.isoformat()})
 
 
 @app.post("/admin/visitors/purge")

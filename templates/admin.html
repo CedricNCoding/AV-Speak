@@ -25,6 +25,7 @@
         <button class="admin-tab" onclick="showTab('settings')">Apparence</button>
         <button class="admin-tab" onclick="showTab('notifications')">Notifications</button>
         <button class="admin-tab" onclick="showTab('register')">Registre</button>
+        <button class="admin-tab" onclick="showTab('license')">Licence</button>
         <button class="admin-tab" onclick="showTab('cgu')">CGU</button>
         <button class="admin-tab" onclick="showTab('password')">Mot de passe</button>
     </div>
@@ -533,6 +534,41 @@
         {% endif %}
     </div>
 
+    <!-- License panel -->
+    <div class="admin-panel" id="panel-license">
+        <h2>Licence d'utilisation</h2>
+
+        {% if license_status.expired %}
+        <div style="padding:20px; background:#ffebee; border:2px solid #e53935; border-radius:12px; margin-bottom:20px;">
+            <h3 style="color:#c62828; margin:0 0 10px;">Licence expir&eacute;e</h3>
+            <p style="margin:0;">Votre licence a expir&eacute; le <strong>{{ license_status.expiry }}</strong>. L'annonce de visiteurs est bloqu&eacute;e. Entrez un nouveau code ci-dessous pour r&eacute;activer le logiciel.</p>
+        </div>
+        {% elif license_status.warning %}
+        <div style="padding:20px; background:#fff8e1; border:2px solid #f9a825; border-radius:12px; margin-bottom:20px;">
+            <h3 style="color:#f57f17; margin:0 0 10px;">Licence bient&ocirc;t expir&eacute;e</h3>
+            <p style="margin:0;">Il reste <strong>{{ license_status.days_left }} jour(s)</strong> avant expiration (le {{ license_status.expiry }}). Pensez &agrave; renouveler votre licence.</p>
+        </div>
+        {% else %}
+        <div style="padding:20px; background:#e8f5e9; border:2px solid #43a047; border-radius:12px; margin-bottom:20px;">
+            <h3 style="color:#2e7d32; margin:0 0 10px;">Licence active</h3>
+            <p style="margin:0;">Expire le <strong>{{ license_status.expiry }}</strong> ({{ license_status.days_left }} jours restants).</p>
+        </div>
+        {% endif %}
+
+        <div class="settings-group" style="padding:20px; background:#f9f9f9; border-radius:12px;">
+            <h3>Activer / renouveler une licence</h3>
+            <p style="font-size:0.9rem; color:#666; margin-bottom:15px;">
+                Entrez le code re&ccedil;u lors de votre achat ou renouvellement. Le nombre de jours s'ajoute &agrave; la date d'expiration actuelle.
+            </p>
+            <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+                <input type="text" id="license_code" placeholder="AVSP-XXXXXXXX-XXX-XXXXXXXX"
+                    style="flex:1; min-width:300px; max-width:500px; padding:12px; font-size:1rem; font-family:monospace; border:2px solid #ddd; border-radius:8px;">
+                <button type="button" class="btn btn-primary" onclick="activateLicense()">Activer</button>
+            </div>
+            <div id="license_result" style="margin-top:15px; font-size:0.95rem;"></div>
+        </div>
+    </div>
+
     <!-- CGU panel -->
     <div class="admin-panel" id="panel-cgu">
         <div style="max-width:800px; line-height:1.7; font-size:0.95rem;">
@@ -619,6 +655,28 @@
                 const data = await resp.json();
                 result.textContent = data.message;
                 result.style.color = data.status === 'ok' ? '#4CAF50' : '#e53935';
+            } catch (e) {
+                result.textContent = 'Erreur de connexion';
+                result.style.color = '#e53935';
+            }
+        }
+
+        async function activateLicense() {
+            const code = document.getElementById('license_code').value.trim();
+            const result = document.getElementById('license_result');
+            if (!code) { result.textContent = 'Entrez un code.'; result.style.color = '#e53935'; return; }
+            result.textContent = 'Verification...';
+            result.style.color = '#666';
+            try {
+                const formData = new FormData();
+                formData.append('code', code);
+                const resp = await fetch('/admin/license/activate', { method: 'POST', body: formData });
+                const data = await resp.json();
+                result.textContent = data.message + (data.new_expiry ? ' - Nouvelle expiration : ' + data.new_expiry : '');
+                result.style.color = data.status === 'ok' ? '#4CAF50' : '#e53935';
+                if (data.status === 'ok') {
+                    setTimeout(() => location.reload(), 1500);
+                }
             } catch (e) {
                 result.textContent = 'Erreur de connexion';
                 result.style.color = '#e53935';

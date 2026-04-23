@@ -163,7 +163,7 @@ Martin;Marie;Mme;marie@mail.com;0698765432
 | Service ne demarre pas | `sudo journalctl -u av-speak -f` pour voir les erreurs |
 | Chromium ne s'ouvre pas | Verifier que X est lance : `Ctrl+Alt+F1`, verifier les logs Openbox |
 | Ecran de veille s'active | Les commandes `xset` dans Openbox autostart doivent etre presentes |
-| Clavier virtuel absent | Chromium doit etre lance avec `--enable-features=VirtualKeyboard` |
+| Clavier virtuel absent | Le clavier est integre dans la page web, apparait au focus sur un champ texte ou via le bouton rond en bas a droite |
 | Base corrompue | Supprimer `/opt/av-speak/av_speak.db` et redemarrer (repart a zero) |
 
 ---

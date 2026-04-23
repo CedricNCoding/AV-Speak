@@ -132,13 +132,17 @@ Pour acceder au terminal local depuis la borne : `Ctrl+Alt+F2`
 
 ## Configuration initiale
 
-1. Se connecter a l'admin (`admin` / `admin`)
-2. Accepter les CGU
-3. **Changer le mot de passe** (onglet Mot de passe)
-4. Ajouter les contacts (onglet Contacts) : manuellement ou import CSV
-5. Personnaliser l'apparence (onglet Apparence) : logo, couleurs, phrase d'annonce
-6. Configurer les notifications email/SMS si necessaire (onglet Notifications)
-7. Activer le registre de securite si souhaite (onglet Registre)
+1. **Deployer la cle de licence** (vendeur) : copier `license_secret.key` dans `/opt/av-speak/` puis `sudo systemctl restart av-speak`
+2. Se connecter a l'admin (`admin` / `admin`)
+3. Accepter les CGU
+4. **Changer le mot de passe** (onglet Mot de passe)
+5. **Activer la licence** (onglet Licence) avec le code fourni
+6. Ajouter les contacts (onglet Contacts) : manuellement ou import CSV
+7. Personnaliser l'apparence (onglet Apparence) : logo, couleurs, phrase d'annonce
+8. Configurer les notifications email/SMS si necessaire (onglet Notifications)
+9. Activer le registre de securite si souhaite (onglet Registre)
+
+**Licence et abonnement** : voir `LICENCE-SYSTEME.md` pour la generation des codes et la gestion des abonnements.
 
 ### Format CSV pour import de contacts
 

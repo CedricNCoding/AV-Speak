@@ -14,20 +14,9 @@ import argparse
 import hmac
 import hashlib
 import secrets
-import sys
-from pathlib import Path
 
-# La cle est lue depuis license_secret.key (dans le meme dossier).
-# Ce fichier doit etre IDENTIQUE a celui utilise par app.py sur les installations client.
-SECRET_FILE = Path(__file__).resolve().parent / "license_secret.key"
-
-if not SECRET_FILE.exists():
-    print(f"ERREUR : {SECRET_FILE} introuvable.", file=sys.stderr)
-    print("Creez ce fichier (contenu = votre cle secrete binaire) et deployez-le", file=sys.stderr)
-    print("aux installations client pour que les codes soient valides.", file=sys.stderr)
-    sys.exit(1)
-
-LICENSE_SECRET = SECRET_FILE.read_bytes().strip()
+# IDENTIQUE a LICENSE_SECRET dans app.py
+LICENSE_SECRET = b"5ed1966ecbfabb763c5bf26a54d6d7009804138ebb61dfc032e46ede38a84e1e"
 
 
 def generate_code(days: int) -> str:

@@ -16,15 +16,16 @@ Documentation du systeme d'abonnement base sur des codes signes HMAC.
 
 ## Architecture
 
-### Cle secrete (`license_secret.key`)
+### Cle secrete
 
-- Fichier binaire place a la racine du projet : `/opt/av-speak/license_secret.key`
-- **Gitignore** : ce fichier N'EST JAMAIS commite sur Git
-- Meme contenu sur :
-  - La machine du vendeur (pour generer les codes)
-  - Chaque installation client (pour valider les codes)
-- Sans ce fichier, le logiciel tourne en **mode essai** avec une cle aleatoire
-  (aucun code vendeur ne fonctionnera).
+- Cle HMAC embarquee directement dans `app.py` et `generate-license.py`
+- Identique sur toutes les installations (depot Git prive)
+- Permet au vendeur de generer des codes valides pour tous les clients
+- Aucun deploiement manuel a effectuer par client
+
+**IMPORTANT** : le depot Git doit rester prive. Si la cle fuite, toute personne
+peut generer des codes gratuits. En cas de compromission, changer la cle dans
+`app.py` et `generate-license.py` invalidera tous les anciens codes.
 
 ### Format des codes
 
@@ -55,23 +56,9 @@ Settings lies :
 
 ---
 
-## Workflow vendeur (premiere fois)
+## Workflow vendeur
 
-### 1. Generer votre cle secrete (UNE SEULE FOIS)
-
-Sur votre machine :
-
-```bash
-cd /chemin/vers/AV-Speak
-python3 -c "import secrets; open('license_secret.key','wb').write(secrets.token_hex(32).encode())"
-```
-
-**IMPORTANT** :
-- Sauvegardez ce fichier dans un endroit sur (coffre-fort numerique, pas sur Git)
-- Si vous le perdez, tous les codes generes precedemment seront inutilisables
-- Si vous le changez, tous les anciens codes deviennent invalides
-
-### 2. Generer des codes
+### Generer des codes
 
 ```bash
 # Un code de 1 an
@@ -92,7 +79,7 @@ python3 generate-license.py --days 1095
 
 Chaque appel genere des codes uniques (numero de serie aleatoire).
 
-### 3. Livrer les codes aux clients
+### Livrer les codes aux clients
 
 Transmettez le code au client par email, SMS, ou papier. Format :
 
@@ -106,17 +93,9 @@ AVSP-A3F2B9C8-365-1E7F9A2D
 
 ### Premiere installation
 
-1. Installer AV-Speak (voir `DEPLOIEMENT.md`)
-2. Par defaut : **essai de 30 jours** (cle aleatoire auto-generee)
-3. Deployer votre cle secrete sur le poste :
-
-```bash
-# Copier license_secret.key vers le serveur client (SCP, SSH, USB...)
-scp license_secret.key utilisateur@ip-client:/tmp/
-ssh utilisateur@ip-client "sudo mv /tmp/license_secret.key /opt/av-speak/ && sudo systemctl restart av-speak"
-```
-
-4. Le client entre son code dans Admin > Licence
+1. Installer AV-Speak (voir `DEPLOIEMENT.md`) — la cle HMAC est deja embarquee
+2. Par defaut : **essai de 30 jours**
+3. Le client entre son code dans Admin > Licence
 
 ### Renouvellement
 
@@ -156,13 +135,14 @@ s'ajoutent a la date d'expiration actuelle (ou a la date du jour si expire).
 
 ## Fichiers du systeme de licence
 
-| Fichier | Role | Sur Git ? |
-|---------|------|-----------|
-| `app.py` | Validation + routes admin (`/admin/license/activate`) | Oui |
-| `generate-license.py` | Script generateur de codes (vendeur) | Oui |
-| `license_secret.key` | Cle HMAC partagee | **NON** (gitignore) |
-| `templates/admin.html` | Onglet "Licence" | Oui |
-| `templates/kiosk.html` | Popup rouge et banniere jaune | Oui |
+| Fichier | Role |
+|---------|------|
+| `app.py` | Cle HMAC + validation + routes admin |
+| `generate-license.py` | Script generateur de codes (vendeur) |
+| `templates/admin.html` | Onglet "Licence" |
+| `templates/kiosk.html` | Popup rouge et banniere jaune |
+
+**Depot Git** : doit rester prive — la cle HMAC y est presente.
 
 ---
 
@@ -194,8 +174,7 @@ Reponses :
 
 | Symptome | Cause probable | Solution |
 |----------|---------------|----------|
-| "Mode essai" dans les logs | `license_secret.key` manquant | Deployer le fichier sur `/opt/av-speak/` |
-| Code refuse "Code invalide" | Cle secrete differente entre vendeur et client | Verifier que les deux fichiers ont le meme contenu |
+| Code refuse "Code invalide" | Cle HMAC differente entre vendeur et client | Verifier que les deux fichiers `app.py` et `generate-license.py` ont la meme cle |
 | Code refuse "Deja utilise" | Le numero de serie existe en base | Generer un nouveau code avec `generate-license.py` |
 | Kiosque bloque en permanence | Expiration depassee ET pas de code | Aller sur `/admin/login` et saisir un code valide |
 | Changer la cle secrete apres vente | Tous les anciens codes deviennent invalides | Eviter absolument. Garder la cle initiale. |

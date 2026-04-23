@@ -23,26 +23,12 @@ BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = BASE_DIR / "av_speak.db"
 
 # --- License ---
-# La cle secrete est lue depuis license_secret.key (non commite sur Git).
-# Cette cle doit etre identique entre le serveur du vendeur et les installations client
-# pour que les codes generes soient valides. NE PAS PUBLIER.
-LICENSE_SECRET_FILE = BASE_DIR / "license_secret.key"
+# Cle HMAC pour signer les codes de licence.
+# Le depot Git etant prive, la cle est directement dans le code pour simplifier
+# le deploiement. Cette meme cle doit etre utilisee par generate-license.py.
+LICENSE_SECRET = b"5ed1966ecbfabb763c5bf26a54d6d7009804138ebb61dfc032e46ede38a84e1e"
 TRIAL_DAYS = 30
 EXPIRY_WARNING_DAYS = 7
-
-
-def _load_license_secret() -> bytes:
-    """Load license secret from file, or create a random one for trial mode."""
-    if LICENSE_SECRET_FILE.exists():
-        return LICENSE_SECRET_FILE.read_bytes().strip()
-    # Generate a random secret if missing (trial mode - vendor codes won't work)
-    print("AVERTISSEMENT: license_secret.key manquant. Mode essai - les codes vendeur ne fonctionneront pas.")
-    random_key = secrets.token_hex(32).encode()
-    LICENSE_SECRET_FILE.write_bytes(random_key)
-    return random_key
-
-
-LICENSE_SECRET = _load_license_secret()
 TTS_CACHE_DIR = BASE_DIR / "tts_cache"
 PIPER_BIN = BASE_DIR / "piper" / "piper"
 PIPER_MODEL = BASE_DIR / "piper" / "fr_FR-siwis-medium.onnx"

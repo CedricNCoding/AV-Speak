@@ -6,4 +6,3 @@ tts_cache/
 piper/
 *.wav
 .env
-license_secret.key

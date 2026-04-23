@@ -202,6 +202,16 @@ unclutter -idle 1 -root &
 
 # Demarrer PulseAudio
 pulseaudio --start 2>/dev/null &
+sleep 2
+
+# Forcer le jack (sortie analogique) comme sortie par defaut et demuter
+# Detecte automatiquement le sink analog-stereo (jack) parmi les sinks disponibles
+ANALOG_SINK=\$(pactl list sinks short | awk '/analog-stereo/ {print \$2; exit}')
+if [ -n "\$ANALOG_SINK" ]; then
+    pactl set-default-sink "\$ANALOG_SINK"
+    pactl set-sink-mute "\$ANALOG_SINK" 0
+    pactl set-sink-volume "\$ANALOG_SINK" 85%
+fi
 
 # Attendre que l'appli AV-Speak soit prete (max 60s)
 echo "Attente de AV-Speak sur ${APP_URL}..."

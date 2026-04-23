@@ -15,6 +15,18 @@
             --color-button-text: {{ settings.color_button_text }};
         }
         body { background: var(--color-background); color: var(--color-text); }
+        body.font-petit { font-size: 0.85rem; }
+        body.font-petit h1 { font-size: 1.8rem; }
+        body.font-petit h2 { font-size: 1.2rem; }
+        body.font-petit .search-input { font-size: 1.1rem; padding: 15px 20px; }
+        body.font-petit .top-btn, body.font-petit .contact-btn { font-size: 1rem; padding: 14px; }
+        body.font-petit .btn-confirm, body.font-petit .btn-cancel { font-size: 1rem; padding: 10px 20px; }
+        body.font-tres-petit { font-size: 0.75rem; }
+        body.font-tres-petit h1 { font-size: 1.4rem; }
+        body.font-tres-petit h2 { font-size: 1rem; }
+        body.font-tres-petit .search-input { font-size: 0.95rem; padding: 10px 15px; }
+        body.font-tres-petit .top-btn, body.font-tres-petit .contact-btn { font-size: 0.9rem; padding: 10px; }
+        body.font-tres-petit .btn-confirm, body.font-tres-petit .btn-cancel { font-size: 0.9rem; padding: 8px 16px; }
         .kiosk-header h1 { color: var(--color-primary); }
         .search-input:focus { border-color: var(--color-primary); }
         .contact-btn { background: var(--color-secondary); color: var(--color-text); }
@@ -59,7 +71,7 @@
         .vkb-toggle:active { opacity: 0.8; }
     </style>
 </head>
-<body class="kiosk-body">
+<body class="kiosk-body font-{{ settings.get('kiosk_font_size', 'classique') }}">
 
     <div class="kiosk-header">
         {% if settings.logo_url %}
@@ -149,6 +161,21 @@
                            border:none; border-radius:12px; cursor:pointer;">
                 Valider
             </button>
+        </div>
+    </div>
+
+    <!-- Custom confirm modal (replaces native confirm dialog) -->
+    <div class="modal-overlay" id="customConfirm">
+        <div class="modal-box">
+            <h2 id="customConfirmTitle">Confirmation</h2>
+            <p id="customConfirmMessage"></p>
+            <div class="modal-actions" style="margin-top:20px;">
+                <button class="btn-cancel" id="customConfirmNo">Annuler</button>
+                <button class="btn-confirm" id="customConfirmYes"
+                        style="background: var(--color-button); color: var(--color-button-text);">
+                    Confirmer
+                </button>
+            </div>
         </div>
     </div>
 
@@ -417,8 +444,30 @@
             } catch (e) {}
         }
 
+        function customConfirm(message, title) {
+            return new Promise(resolve => {
+                document.getElementById('customConfirmTitle').textContent = title || 'Confirmation';
+                document.getElementById('customConfirmMessage').textContent = message;
+                const modal = document.getElementById('customConfirm');
+                modal.classList.add('active');
+                const yesBtn = document.getElementById('customConfirmYes');
+                const noBtn = document.getElementById('customConfirmNo');
+                const cleanup = (result) => {
+                    modal.classList.remove('active');
+                    yesBtn.removeEventListener('click', onYes);
+                    noBtn.removeEventListener('click', onNo);
+                    resolve(result);
+                };
+                const onYes = () => cleanup(true);
+                const onNo = () => cleanup(false);
+                yesBtn.addEventListener('click', onYes);
+                noBtn.addEventListener('click', onNo);
+            });
+        }
+
         async function visitorLeave(id) {
-            if (!confirm('Confirmer votre d\u00e9part ?')) return;
+            const ok = await customConfirm('Confirmer votre d\u00e9part ?', 'Quitter les lieux');
+            if (!ok) return;
             try {
                 await fetch('/api/visitors/' + id + '/leave', { method: 'POST' });
                 loadVisitors();
@@ -505,14 +554,29 @@
                         } else {
                             btn.textContent = key;
                         }
-                        btn.addEventListener('touchstart', function(e) {
+                        // Keys eligible for long-press repeat (letters, numbers, backspace, space)
+                        const isRepeatable = !['{shift}','{enter}','{hide}'].includes(key);
+                        let longPressTimer = null;
+                        let repeatInterval = null;
+                        const stopRepeat = () => {
+                            if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+                            if (repeatInterval) { clearInterval(repeatInterval); repeatInterval = null; }
+                        };
+                        const startPress = (e) => {
                             e.preventDefault();
                             handleKey(key);
-                        });
-                        btn.addEventListener('mousedown', function(e) {
-                            e.preventDefault();
-                            handleKey(key);
-                        });
+                            if (isRepeatable) {
+                                longPressTimer = setTimeout(() => {
+                                    repeatInterval = setInterval(() => handleKey(key), 80);
+                                }, 500);
+                            }
+                        };
+                        btn.addEventListener('touchstart', startPress);
+                        btn.addEventListener('mousedown', startPress);
+                        btn.addEventListener('touchend', stopRepeat);
+                        btn.addEventListener('touchcancel', stopRepeat);
+                        btn.addEventListener('mouseup', stopRepeat);
+                        btn.addEventListener('mouseleave', stopRepeat);
                         rowDiv.appendChild(btn);
                     });
                     overlay.appendChild(rowDiv);

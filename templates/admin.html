@@ -228,6 +228,18 @@
             </div>
 
             <div class="settings-group">
+                <h3>Taille du contenu kiosk</h3>
+                <div class="color-row">
+                    <label>Taille g&eacute;n&eacute;rale</label>
+                    <select name="kiosk_font_size" style="width:200px;">
+                        <option value="tres-petit" {% if settings.get('kiosk_font_size','classique') == 'tres-petit' %}selected{% endif %}>Tr&egrave;s petit</option>
+                        <option value="petit" {% if settings.get('kiosk_font_size','classique') == 'petit' %}selected{% endif %}>Petit</option>
+                        <option value="classique" {% if settings.get('kiosk_font_size','classique') == 'classique' %}selected{% endif %}>Classique</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="settings-group">
                 <h3>Clavier virtuel</h3>
                 <div class="color-row">
                     <label>Taille du clavier</label>

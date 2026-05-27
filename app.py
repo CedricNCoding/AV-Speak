@@ -39,9 +39,13 @@ app = FastAPI()
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
-# Simple session store (in-memory, single PC)
-# sessions maps session_id -> {"username": str, "cgu_accepted": bool}
+# Simple session store (in-memory, single PC).
+# sessions maps session_id -> {"username": str, "cgu_accepted": bool,
+#                              "must_change_password": bool, "created_at": float, "last_used": float}
 sessions: dict[str, dict] = {}
+_sessions_lock = threading.Lock()
+# Enable Secure cookie only if the deployment serves over HTTPS (env var).
+_COOKIE_SECURE = os.environ.get("AVSPEAK_HTTPS", "").lower() in ("1", "true", "yes")
 
 # --- Database ---
 
@@ -89,16 +93,40 @@ def init_db():
             left_at TEXT,
             FOREIGN KEY (contact_id) REFERENCES contacts(id) ON DELETE SET NULL
         );
+        CREATE TABLE IF NOT EXISTS evac_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            triggered_at TEXT NOT NULL,
+            success INTEGER NOT NULL,
+            recipients TEXT NOT NULL,
+            visitors_count INTEGER NOT NULL,
+            error TEXT DEFAULT '',
+            source_ip TEXT DEFAULT '',
+            user_agent TEXT DEFAULT ''
+        );
     """)
     # Migration: add civilite column if missing
     columns = [row[1] for row in conn.execute("PRAGMA table_info(contacts)").fetchall()]
     if "civilite" not in columns:
         conn.execute("ALTER TABLE contacts ADD COLUMN civilite TEXT DEFAULT 'X' NOT NULL")
-    # Create default admin if not exists
+    # Migration: add audit columns on evac_log if upgrading from an earlier schema
+    evac_cols = [row[1] for row in conn.execute("PRAGMA table_info(evac_log)").fetchall()]
+    if "source_ip" not in evac_cols:
+        conn.execute("ALTER TABLE evac_log ADD COLUMN source_ip TEXT DEFAULT ''")
+    if "user_agent" not in evac_cols:
+        conn.execute("ALTER TABLE evac_log ADD COLUMN user_agent TEXT DEFAULT ''")
+    # Migration: add must_change_password flag on users
+    user_cols = [row[1] for row in conn.execute("PRAGMA table_info(users)").fetchall()]
+    if "must_change_password" not in user_cols:
+        conn.execute("ALTER TABLE users ADD COLUMN must_change_password INTEGER DEFAULT 0")
+    # Create default admin if not exists. The default password 'admin' is intentionally
+    # weak — we flag the account so the very next login forces a password change.
     existing = conn.execute("SELECT id FROM users WHERE username = 'admin'").fetchone()
     if not existing:
         pw_hash = _bcrypt.hashpw("admin".encode(), _bcrypt.gensalt()).decode()
-        conn.execute("INSERT INTO users (username, password_hash) VALUES (?, ?)", ("admin", pw_hash))
+        conn.execute(
+            "INSERT INTO users (username, password_hash, must_change_password) VALUES (?, ?, 1)",
+            ("admin", pw_hash),
+        )
     # Default color settings
     defaults = {
         "color_primary": "#1a73e8",
@@ -149,6 +177,12 @@ def init_db():
         # Security register
         "security_register_enabled": "0",
         "security_register_history": "1",
+        # Evacuation alert
+        "evac_enabled": "0",
+        "evac_code_hash": "",
+        "evac_recipients": "",
+        "evac_subject": "[ALERTE EVACUATION] Liste des visiteurs presents - {entreprise}",
+        "evac_body_header": "Liste des visiteurs presents dans l'etablissement au moment du declenchement de l'alerte.",
     }
     for key, value in defaults.items():
         conn.execute(
@@ -219,14 +253,47 @@ def get_license_status(conn: sqlite3.Connection) -> dict:
     }
 
 
-def require_auth(request: Request):
+def _is_json_request(request: Request) -> bool:
+    accept = request.headers.get("accept", "")
+    ctype = request.headers.get("content-type", "")
+    return "application/json" in accept or "application/json" in ctype
+
+
+def require_auth(request: Request, *, allow_force_change: bool = False):
+    """Validate session, enforce TTL, CGU acceptance, and forced password change.
+
+    If `allow_force_change` is True (only for the /admin/password route), the
+    must_change_password gate is skipped — so the user can actually change it.
+    """
     session_id = request.cookies.get("session_id")
-    if not session_id or session_id not in sessions:
-        raise HTTPException(status_code=status.HTTP_303_SEE_OTHER, headers={"Location": "/admin/login"})
-    session = sessions[session_id]
-    if not session.get("cgu_accepted"):
-        raise HTTPException(status_code=status.HTTP_303_SEE_OTHER, headers={"Location": "/admin/cgu"})
-    return session["username"]
+    now = _time.monotonic()
+    json_req = _is_json_request(request)
+
+    def deny_redirect(location: str):
+        if json_req:
+            raise HTTPException(status_code=401, detail="Session expiree ou non authentifiee")
+        raise HTTPException(status_code=status.HTTP_303_SEE_OTHER, headers={"Location": location})
+
+    with _sessions_lock:
+        session = sessions.get(session_id) if session_id else None
+        if session:
+            age = now - session.get("created_at", now)
+            idle = now - session.get("last_used", now)
+            if age > SESSION_TTL_S or idle > SESSION_TTL_S:
+                sessions.pop(session_id, None)
+                session = None
+        if not session:
+            deny_redirect("/admin/login")
+        session["last_used"] = now
+        cgu_ok = session.get("cgu_accepted", False)
+        must_change = session.get("must_change_password", False)
+        username = session["username"]
+
+    if not cgu_ok:
+        deny_redirect("/admin/cgu")
+    if must_change and not allow_force_change:
+        deny_redirect("/admin/password?force=1")
+    return username
 
 
 # --- TTS generation ---
@@ -379,6 +446,251 @@ def send_sms(settings: dict, contact: dict, civilite: str,
             raise
 
 
+# --- Evacuation alert ---
+
+import time as _time
+
+EVAC_CODE_REGEX = "^[0-9]{6}$"
+# Server-side pepper combined with the PIN before bcrypt. Defends offline brute-force
+# of a stolen database — the attacker would need the source code too.
+EVAC_PEPPER = b"f3a91c2b8e7d6549a0b4c2d8e1f9a7b3c5d6e8f0a2b4c6d8e0f1a3b5c7d9e2f4"
+EVAC_TRIGGER_COOLDOWN_S = 60
+EVAC_FAIL_WINDOW_S = 900
+EVAC_FAIL_MAX_PER_IP = 5
+EVAC_FAIL_MAX_GLOBAL = 30
+EVAC_LOG_RETENTION_DAYS = 90
+SESSION_TTL_S = 8 * 3600
+
+# Keys that must never be exposed by the public /api/settings endpoint.
+SENSITIVE_SETTING_KEYS = {
+    "smtp_password", "smtp_user", "smtp_host", "smtp_port", "smtp_from",
+    "ovh_app_key", "ovh_app_secret", "ovh_consumer_key", "ovh_sms_service",
+    "evac_code_hash", "evac_recipients", "email_subject", "email_body",
+    "sms_body", "evac_subject", "evac_body_header",
+}
+
+# In-memory rate-limit state for /api/evac/trigger.
+_evac_fail_log: dict[str, list[float]] = {}
+_evac_last_success_ts: float = 0.0
+_evac_global_fails: list[float] = []
+_evac_state_lock = threading.Lock()
+_evac_dummy_hash_cache: str | None = None
+# Per-IP throttle for /api/visitors/present (small, just enough to defeat polling recon).
+_visitors_last_call: dict[str, float] = {}
+_visitors_lock = threading.Lock()
+
+
+def _peppered(code: str) -> bytes:
+    """HMAC-SHA256 the PIN with the server pepper before bcrypt — defense in depth."""
+    return hmac.new(EVAC_PEPPER, code.encode("utf-8"), hashlib.sha256).digest()
+
+
+def _evac_dummy_hash() -> str:
+    """Pre-computed bcrypt hash for constant-time-ish dummy comparisons."""
+    global _evac_dummy_hash_cache
+    if _evac_dummy_hash_cache is None:
+        _evac_dummy_hash_cache = _bcrypt.hashpw(
+            _peppered("000000"), _bcrypt.gensalt(rounds=12)
+        ).decode("ascii")
+    return _evac_dummy_hash_cache
+
+
+def hash_evac_code(code: str) -> str:
+    return _bcrypt.hashpw(_peppered(code), _bcrypt.gensalt(rounds=12)).decode("ascii")
+
+
+def verify_evac_code(code: str, stored_hash: str) -> bool:
+    """Always performs a bcrypt operation to avoid timing oracle on disabled / no-code states."""
+    if not code:
+        # Still run a dummy check to equalize timing.
+        try:
+            _bcrypt.checkpw(_peppered("000000"), _evac_dummy_hash().encode("ascii"))
+        except Exception:
+            pass
+        return False
+    target = stored_hash or _evac_dummy_hash()
+    try:
+        ok = _bcrypt.checkpw(_peppered(code), target.encode("ascii"))
+    except (ValueError, TypeError):
+        ok = False
+    # If we ran against the dummy, force False regardless of result (paranoid).
+    if not stored_hash:
+        return False
+    return ok
+
+
+def _safe_subject_format(tpl: str, entreprise: str, date_str: str) -> str:
+    """Whitelist-only placeholder substitution — avoids str.format SSTI / attribute traversal."""
+    out = (tpl or "").replace("{entreprise}", entreprise).replace("{date}", date_str)
+    return out
+
+
+def _strip_header_value(s: str) -> str:
+    """Remove CR/LF/NUL to defeat SMTP/email header injection."""
+    if not s:
+        return ""
+    return "".join(c for c in s if c not in ("\r", "\n", "\x00"))[:998]
+
+
+def _smtp_host_safe(host: str) -> bool:
+    """Block obvious SSRF targets via configurable SMTP host (loopback, metadata services)."""
+    import ipaddress
+    h = (host or "").strip().lower()
+    if not h or len(h) > 253:
+        return False
+    blocked_names = {"localhost", "ip6-localhost", "ip6-loopback",
+                     "metadata.google.internal", "metadata.azure.com"}
+    if h in blocked_names:
+        return False
+    try:
+        ip = ipaddress.ip_address(h)
+        if (ip.is_loopback or ip.is_link_local or ip.is_unspecified or
+                ip.is_multicast or ip.is_reserved):
+            return False
+    except ValueError:
+        pass  # Hostname — allow (LAN deployments may legitimately use private SMTP relays)
+    return True
+
+
+def _client_ip(request: Request) -> str:
+    # Direct connection IP. We deliberately ignore X-Forwarded-For (no trusted proxy in this app).
+    return (request.client.host if request and request.client else "?") or "?"
+
+
+def _evac_rate_limit_check(ip: str) -> tuple[bool, str]:
+    """Returns (allowed, error_message)."""
+    now = _time.monotonic()
+    with _evac_state_lock:
+        # Trim global fail log
+        cutoff = now - EVAC_FAIL_WINDOW_S
+        _evac_global_fails[:] = [t for t in _evac_global_fails if t >= cutoff]
+        if len(_evac_global_fails) >= EVAC_FAIL_MAX_GLOBAL:
+            return False, "Trop de tentatives, reessayez plus tard"
+        # Per-IP
+        recent = [t for t in _evac_fail_log.get(ip, []) if t >= cutoff]
+        _evac_fail_log[ip] = recent
+        if len(recent) >= EVAC_FAIL_MAX_PER_IP:
+            return False, "Trop de tentatives, reessayez plus tard"
+        # Global cooldown after a successful trigger
+        global _evac_last_success_ts
+        if _evac_last_success_ts and (now - _evac_last_success_ts) < EVAC_TRIGGER_COOLDOWN_S:
+            wait = int(EVAC_TRIGGER_COOLDOWN_S - (now - _evac_last_success_ts))
+            return False, f"Patientez {wait}s avant un nouveau declenchement"
+    return True, ""
+
+
+def _evac_record_fail(ip: str):
+    now = _time.monotonic()
+    with _evac_state_lock:
+        _evac_fail_log.setdefault(ip, []).append(now)
+        _evac_global_fails.append(now)
+
+
+def _evac_record_success():
+    global _evac_last_success_ts
+    with _evac_state_lock:
+        _evac_last_success_ts = _time.monotonic()
+
+
+def parse_recipients(raw: str) -> list[str]:
+    """Parse a recipients string (comma/newline separated) into a deduped list of valid-looking emails."""
+    import re
+    if not raw:
+        return []
+    tokens = [t.strip() for t in re.split(r"[,;\n\r]+", raw) if t.strip()]
+    seen = set()
+    out = []
+    email_re = re.compile(r"^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$")
+    for t in tokens:
+        if len(t) > 254:
+            continue
+        if not email_re.match(t):
+            continue
+        low = t.lower()
+        if low in seen:
+            continue
+        seen.add(low)
+        out.append(t)
+    return out
+
+
+def send_evac_email(settings: dict, recipients: list[str], visitors: list[dict]) -> tuple[bool, str]:
+    """Send the evacuation list email. Returns (success, error_message)."""
+    if settings.get("smtp_enabled") != "1":
+        return False, "SMTP desactive dans les parametres"
+    if not recipients:
+        return False, "Aucun destinataire configure"
+    if not settings.get("smtp_host") or not settings.get("smtp_from"):
+        return False, "Configuration SMTP incomplete"
+    if not _smtp_host_safe(settings.get("smtp_host", "")):
+        return False, "Hote SMTP refuse (loopback/metadata interdit)"
+
+    try:
+        now = datetime.now()
+        date_str = now.strftime("%d/%m/%Y a %H:%M")
+        entreprise = _strip_header_value(settings.get("entreprise_nom", ""))
+        subject_tpl = settings.get("evac_subject",
+            "[ALERTE EVACUATION] Liste des visiteurs presents - {entreprise}")
+        subject = _strip_header_value(_safe_subject_format(subject_tpl, entreprise, date_str)).strip()
+        if not subject:
+            subject = f"[ALERTE EVACUATION] Liste des visiteurs presents - {entreprise}"
+
+        header = (settings.get("evac_body_header", "") or "").strip()
+        lines = [
+            f"ALERTE EVACUATION - {entreprise}",
+            f"Declenchee le {date_str}",
+            "",
+        ]
+        if header:
+            lines.append(header)
+            lines.append("")
+        lines.append(f"Nombre de visiteurs presents : {len(visitors)}")
+        lines.append("")
+        if visitors:
+            for i, v in enumerate(visitors, 1):
+                lines.append(f"{i}. {v.get('prenom','')} {v.get('nom','')}".rstrip())
+                if v.get("entreprise"):
+                    lines.append(f"   Entreprise : {v['entreprise']}")
+                contact_full = f"{v.get('contact_prenom') or ''} {v.get('contact_nom') or ''}".strip()
+                if contact_full:
+                    lines.append(f"   RDV avec : {contact_full}")
+                arrived = v.get("arrived_at", "")
+                if arrived:
+                    arrived_hm = arrived[11:16] if len(arrived) >= 16 else arrived
+                    lines.append(f"   Arrive a : {arrived_hm}")
+                lines.append("")
+        else:
+            lines.append("Aucun visiteur enregistre au moment du declenchement.")
+            lines.append("")
+        lines.append("---")
+        lines.append(f"Message envoye automatiquement par AV-Speak ({entreprise}).")
+        body = "\n".join(lines)
+
+        msg = MIMEMultipart()
+        msg["From"] = _strip_header_value(settings["smtp_from"])
+        # Recipients in the envelope (sendmail) only; To header set to From so addresses
+        # are not disclosed between recipients (Bcc-like behaviour).
+        msg["To"] = _strip_header_value(settings["smtp_from"])
+        msg["Subject"] = subject
+        msg["Auto-Submitted"] = "auto-generated"
+        msg["X-Priority"] = "1"
+        msg.attach(MIMEText(body, "plain", "utf-8"))
+
+        port = int(settings.get("smtp_port", 587))
+        if settings.get("smtp_tls") == "1":
+            server = smtplib.SMTP(settings["smtp_host"], port, timeout=15)
+            server.starttls()
+        else:
+            server = smtplib.SMTP(settings["smtp_host"], port, timeout=15)
+        if settings.get("smtp_user"):
+            server.login(settings["smtp_user"], settings["smtp_password"])
+        server.sendmail(settings["smtp_from"], recipients, msg.as_string())
+        server.quit()
+        return True, ""
+    except Exception as e:
+        return False, f"{type(e).__name__}: {e}"
+
+
 def send_notifications(settings: dict, contact: dict, civilite: str,
                        visitor_name: str = "", visitor_email: str = ""):
     """Send email and SMS in background threads."""
@@ -410,8 +722,21 @@ async def kiosk(request: Request):
 
 @app.get("/audio/{filename}")
 async def serve_audio(filename: str):
-    filepath = TTS_CACHE_DIR / filename
-    if not filepath.exists() or ".." in filename:
+    # Strict allowlist: only md5-hex .wav filenames produced by our TTS cache.
+    import re
+    if not re.fullmatch(r"[a-f0-9]{32}\.wav", filename):
+        raise HTTPException(status_code=404)
+    cache_root = TTS_CACHE_DIR.resolve()
+    try:
+        filepath = (cache_root / filename).resolve()
+    except (OSError, ValueError):
+        raise HTTPException(status_code=404)
+    # Defense-in-depth: ensure the resolved path is still inside the cache directory.
+    try:
+        filepath.relative_to(cache_root)
+    except ValueError:
+        raise HTTPException(status_code=404)
+    if not filepath.is_file():
         raise HTTPException(status_code=404)
     return FileResponse(str(filepath), media_type="audio/wav")
 
@@ -498,9 +823,40 @@ async def announce(contact_id: int, visitor_name: str = "", visitor_email: str =
     }
 
 
+def _same_origin_request(request: Request) -> bool:
+    """Block off-origin polling/recon: require a Referer/Origin pointing at our own host."""
+    host = (request.headers.get("host") or "").lower()
+    if not host:
+        return False
+    ref = (request.headers.get("referer") or request.headers.get("origin") or "").lower()
+    if not ref:
+        return False
+    # ref starts with scheme://host[:port]/...
+    try:
+        ref_host = ref.split("://", 1)[1].split("/", 1)[0]
+    except IndexError:
+        return False
+    return ref_host == host
+
+
 @app.get("/api/visitors/present")
-async def visitors_present():
-    """Return list of currently present visitors."""
+async def visitors_present(request: Request):
+    """Return list of currently present visitors. Restricted to same-origin and
+    throttled per IP to prevent off-kiosk recon and polling-based exfiltration."""
+    if not _same_origin_request(request):
+        raise HTTPException(status_code=403, detail="Origine non autorisee")
+    ip = _client_ip(request)
+    now = _time.monotonic()
+    with _visitors_lock:
+        last = _visitors_last_call.get(ip, 0.0)
+        if now - last < 3.0:  # min 3s between calls per IP — kiosk polls every 15s
+            raise HTTPException(status_code=429, detail="Trop de requetes")
+        _visitors_last_call[ip] = now
+        # Opportunistic cleanup
+        if len(_visitors_last_call) > 200:
+            cutoff = now - 300
+            for k in [k for k, t in _visitors_last_call.items() if t < cutoff]:
+                _visitors_last_call.pop(k, None)
     conn = get_db()
     visitors = conn.execute(
         """SELECT v.id, v.nom, v.prenom, v.entreprise, v.arrived_at,
@@ -546,7 +902,101 @@ async def api_get_settings():
     conn = get_db()
     settings = get_settings(conn)
     conn.close()
-    return settings
+    # Strip secrets and config-only values before exposing publicly.
+    return {k: v for k, v in settings.items() if k not in SENSITIVE_SETTING_KEYS}
+
+
+class EvacTriggerRequest(BaseModel):
+    code: str
+
+
+def _log_evac(conn, success: int, recipients_str: str, visitors_count: int,
+              error: str, source_ip: str, user_agent: str):
+    from datetime import datetime
+    conn.execute(
+        """INSERT INTO evac_log
+           (triggered_at, success, recipients, visitors_count, error, source_ip, user_agent)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+         success, recipients_str, visitors_count,
+         (error or "")[:300], source_ip[:64], (user_agent or "")[:200]),
+    )
+    # Auto-purge rows older than retention window.
+    conn.execute(
+        "DELETE FROM evac_log WHERE triggered_at < datetime('now', ?)",
+        (f"-{EVAC_LOG_RETENTION_DAYS} days",),
+    )
+
+
+@app.post("/api/evac/trigger")
+async def api_evac_trigger(request: Request, payload: EvacTriggerRequest):
+    """Public endpoint: triggers the evacuation email when the 6-digit code is correct."""
+    import re
+    ip = _client_ip(request)
+    ua = (request.headers.get("user-agent") or "")[:200]
+    GENERIC_ERR = "Code incorrect ou fonction indisponible"
+
+    code = (payload.code or "").strip()
+
+    # 1. Rate-limit before any crypto / DB work (also defeats lockout/timing recon).
+    allowed, lockout_msg = _evac_rate_limit_check(ip)
+    if not allowed:
+        return JSONResponse({"ok": False, "error": lockout_msg}, status_code=429)
+
+    # 2. Strict format check. Run a dummy bcrypt to equalize timing with the real path.
+    if not re.match(EVAC_CODE_REGEX, code):
+        verify_evac_code("000000", "")  # constant-time dummy
+        _evac_record_fail(ip)
+        return JSONResponse({"ok": False, "error": GENERIC_ERR}, status_code=400)
+
+    conn = get_db()
+    settings = get_settings(conn)
+    enabled = settings.get("evac_enabled") == "1"
+    stored = settings.get("evac_code_hash", "")
+
+    # Always perform a bcrypt check (against dummy if disabled or no code) to
+    # avoid a timing oracle that reveals system state to an unauthenticated caller.
+    code_ok = verify_evac_code(code, stored)
+
+    if not enabled or not stored or not code_ok:
+        _log_evac(conn, 0, "", 0,
+                  "Code incorrect" if (enabled and stored) else
+                  ("Fonction desactivee" if not enabled else "Pas de code defini"),
+                  ip, ua)
+        conn.commit()
+        conn.close()
+        _evac_record_fail(ip)
+        return JSONResponse({"ok": False, "error": GENERIC_ERR}, status_code=401)
+
+    # 3. Send.
+    recipients = parse_recipients(settings.get("evac_recipients", ""))
+    visitors_rows = conn.execute(
+        """SELECT v.id, v.nom, v.prenom, v.entreprise, v.arrived_at,
+                  c.prenom AS contact_prenom, c.nom AS contact_nom
+           FROM visitors v LEFT JOIN contacts c ON v.contact_id = c.id
+           WHERE v.left_at IS NULL ORDER BY v.arrived_at ASC"""
+    ).fetchall()
+    visitors = [dict(v) for v in visitors_rows]
+    success, err = send_evac_email(settings, recipients, visitors)
+
+    _log_evac(conn,
+              1 if success else 0,
+              ", ".join(recipients),
+              len(visitors),
+              "" if success else err,
+              ip, ua)
+    conn.commit()
+    conn.close()
+
+    if not success:
+        # Do NOT expose SMTP error details to the public caller.
+        return JSONResponse(
+            {"ok": False, "error": "Envoi indisponible (voir journal admin)"},
+            status_code=500,
+        )
+
+    _evac_record_success()
+    return {"ok": True, "sent_to": len(recipients), "visitors_count": len(visitors)}
 
 
 # --- Routes: Admin ---
@@ -570,17 +1020,32 @@ async def admin_login(request: Request, username: str = Form(...), password: str
             "request": request, "settings": settings, "error": "Identifiants incorrects"
         })
     session_id = secrets.token_hex(32)
-    sessions[session_id] = {"username": username, "cgu_accepted": False}
+    now = _time.monotonic()
+    with _sessions_lock:
+        sessions[session_id] = {
+            "username": username,
+            "cgu_accepted": False,
+            "must_change_password": bool(user["must_change_password"]) if "must_change_password" in user.keys() else False,
+            "created_at": now,
+            "last_used": now,
+        }
     response = RedirectResponse(url="/admin/cgu", status_code=303)
-    response.set_cookie("session_id", session_id, httponly=True)
+    response.set_cookie(
+        "session_id", session_id,
+        httponly=True,
+        samesite="strict",
+        secure=_COOKIE_SECURE,
+        max_age=SESSION_TTL_S,
+    )
     return response
 
 
 @app.get("/admin/logout")
 async def admin_logout(request: Request):
     session_id = request.cookies.get("session_id")
-    if session_id and session_id in sessions:
-        del sessions[session_id]
+    if session_id:
+        with _sessions_lock:
+            sessions.pop(session_id, None)
     response = RedirectResponse(url="/admin/login", status_code=303)
     response.delete_cookie("session_id")
     return response
@@ -613,6 +1078,27 @@ conforme</strong> aux normes r&eacute;glementaires en vigueur (Code du travail, 
 <p>Le client ne peut en aucun cas se pr&eacute;valoir de l'utilisation de cette fonctionnalit&eacute; pour
 justifier de sa conformit&eacute; aux obligations l&eacute;gales en mati&egrave;re de s&eacute;curit&eacute; et de s&ucirc;ret&eacute;.</p>
 
+<h3>3-bis. Fonction d'alerte &eacute;vacuation</h3>
+<p>La fonctionnalit&eacute; &laquo; Alerte &eacute;vacuation &raquo; permet, sur saisie d'un code &agrave; 6 chiffres,
+l'envoi automatique par email de la liste des visiteurs alors enregistr&eacute;s comme pr&eacute;sents.
+Cette fonctionnalit&eacute; est un <strong>outil de communication d'appoint</strong> et
+<strong>ne se substitue &agrave; aucun dispositif r&eacute;glementaire</strong> (PPMS, SSI, registre de
+s&eacute;curit&eacute;, consignes ERP, exercices d'&eacute;vacuation, etc.).</p>
+<p>Son fonctionnement d&eacute;pend enti&egrave;rement de l'infrastructure du client :
+disponibilit&eacute; du r&eacute;seau et de l'alimentation &eacute;lectrique du poste, accessibilit&eacute;
+du serveur SMTP configur&eacute;, validit&eacute; des identifiants, capacit&eacute; des destinataires
+&agrave; recevoir et traiter le message. <strong>L'&eacute;diteur ne garantit pas la
+disponibilit&eacute; de cette fonction au moment d'un incident</strong>.</p>
+<p>Le client s'engage &agrave; :</p>
+<ul>
+    <li>tester mensuellement l'envoi (bouton de test int&eacute;gr&eacute;) ;</li>
+    <li>informer les visiteurs que leurs donn&eacute;es peuvent &ecirc;tre transmises aux destinataires d&eacute;sign&eacute;s en cas d'incident ;</li>
+    <li>configurer des destinataires de confiance, internes de pr&eacute;f&eacute;rence ;</li>
+    <li>renouveler r&eacute;guli&egrave;rement le code d'acc&egrave;s ;</li>
+    <li>ne pas pr&eacute;senter cette fonction comme un dispositif r&eacute;glementaire aupr&egrave;s de tiers
+        (commissions de s&eacute;curit&eacute;, assureurs, autorit&eacute;s).</li>
+</ul>
+
 <h3>4. Limitation de responsabilit&eacute;</h3>
 <p>L'&eacute;diteur du logiciel ne pourra &ecirc;tre tenu responsable :</p>
 <ul>
@@ -637,8 +1123,9 @@ connaissance de ces conditions.</p>
 @app.get("/admin/cgu", response_class=HTMLResponse)
 async def admin_cgu_page(request: Request):
     session_id = request.cookies.get("session_id")
-    if not session_id or session_id not in sessions:
-        return RedirectResponse(url="/admin/login", status_code=303)
+    with _sessions_lock:
+        if not session_id or session_id not in sessions:
+            return RedirectResponse(url="/admin/login", status_code=303)
     conn = get_db()
     settings = get_settings(conn)
     conn.close()
@@ -650,15 +1137,16 @@ async def admin_cgu_page(request: Request):
 @app.post("/admin/cgu/accept")
 async def admin_cgu_accept(request: Request):
     session_id = request.cookies.get("session_id")
-    if not session_id or session_id not in sessions:
-        return RedirectResponse(url="/admin/login", status_code=303)
-    sessions[session_id]["cgu_accepted"] = True
+    with _sessions_lock:
+        if not session_id or session_id not in sessions:
+            return RedirectResponse(url="/admin/login", status_code=303)
+        sessions[session_id]["cgu_accepted"] = True
     return RedirectResponse(url="/admin", status_code=303)
 
 
 @app.get("/admin", response_class=HTMLResponse)
 async def admin_page(request: Request):
-    require_auth(request)
+    username = require_auth(request)
     conn = get_db()
     settings = get_settings(conn)
     contacts = conn.execute("SELECT * FROM contacts ORDER BY nom, prenom").fetchall()
@@ -675,15 +1163,44 @@ async def admin_page(request: Request):
            WHERE v.left_at IS NOT NULL ORDER BY v.left_at DESC LIMIT 100"""
     ).fetchall()
     license_status = get_license_status(conn)
+    evac_log = conn.execute(
+        """SELECT triggered_at, success, recipients, visitors_count, error, source_ip, user_agent
+           FROM evac_log ORDER BY id DESC LIMIT 20"""
+    ).fetchall()
+    fresh_settings = get_settings(conn)
+    evac_code_set = bool(fresh_settings.get("evac_code_hash"))
+    user_row = conn.execute(
+        "SELECT must_change_password FROM users WHERE username = ?", (username,)
+    ).fetchone()
+    must_change_pw = bool(user_row and user_row["must_change_password"])
+    smtp_ready = (fresh_settings.get("smtp_enabled") == "1"
+                  and bool(fresh_settings.get("smtp_host"))
+                  and bool(fresh_settings.get("smtp_from")))
     conn.close()
+    # Filter sensitive values out of the dict passed to the template — any future
+    # rendering bug (e.g. dumping settings) shouldn't leak credentials.
+    safe_settings = {k: v for k, v in settings.items() if k not in SENSITIVE_SETTING_KEYS}
+    # Re-inject only the non-secret fields needed by the admin UI (passwords stay out).
+    for k in ("smtp_enabled", "smtp_host", "smtp_port", "smtp_user", "smtp_from",
+              "smtp_tls", "email_subject", "email_body",
+              "ovh_app_key", "ovh_sms_service", "ovh_sms_sender",
+              "sms_body", "evac_subject", "evac_body_header", "evac_recipients"):
+        if k in settings:
+            safe_settings[k] = settings[k]
+    # smtp_password / ovh_app_secret / ovh_consumer_key / evac_code_hash stay hidden.
     return templates.TemplateResponse("admin.html", {
         "request": request,
-        "settings": settings,
+        "settings": safe_settings,
         "contacts": contacts,
         "visitors_present": visitors_present,
         "visitors_history": visitors_history,
         "cgu_text": CGU_TEXT,
         "license_status": license_status,
+        "evac_log": evac_log,
+        "evac_code_set": evac_code_set,
+        "must_change_pw": must_change_pw,
+        "smtp_ready": smtp_ready,
+        "username": username,
     })
 
 
@@ -738,6 +1255,9 @@ async def admin_delete_contact(request: Request, contact_id: int):
     return RedirectResponse(url="/admin", status_code=303)
 
 
+_SECRET_SETTING_FIELDS = {"smtp_password", "ovh_app_secret", "ovh_consumer_key"}
+
+
 @app.post("/admin/settings")
 async def admin_update_settings(request: Request):
     require_auth(request)
@@ -754,8 +1274,21 @@ async def admin_update_settings(request: Request):
                 "contact_fields_enabled", "kiosk_instruction", "keyboard_size", "kiosk_font_size",
                 "security_register_enabled", "security_register_history"):
         value = form.get(key)
-        if value is not None:
-            conn.execute("UPDATE settings SET value = ? WHERE key = ?", (value.strip(), key))
+        if value is None:
+            continue
+        cleaned = value.strip()
+        # Never overwrite a stored secret with an empty value (form fields are not pre-filled).
+        if key in _SECRET_SETTING_FIELDS and cleaned == "":
+            continue
+        # Lightweight validation on color fields (defense vs CSS injection).
+        if key.startswith("color_"):
+            import re
+            if not re.fullmatch(r"#[0-9a-fA-F]{6}", cleaned):
+                continue
+        # Strip CR/LF from any field that ends up in email headers.
+        if key in ("smtp_from", "smtp_user", "email_subject", "ovh_sms_sender", "entreprise_nom"):
+            cleaned = _strip_header_value(cleaned)
+        conn.execute("UPDATE settings SET value = ? WHERE key = ?", (cleaned, key))
     conn.commit()
     conn.close()
     return RedirectResponse(url="/admin", status_code=303)
@@ -840,22 +1373,54 @@ async def admin_delete_kiosk_image(request: Request):
     return RedirectResponse(url="/admin", status_code=303)
 
 
+@app.get("/admin/password", response_class=HTMLResponse)
+async def admin_password_page(request: Request, force: str = ""):
+    """Standalone change-password page used when must_change_password is enforced."""
+    username = require_auth(request, allow_force_change=True)
+    conn = get_db()
+    settings = get_settings(conn)
+    user = conn.execute(
+        "SELECT must_change_password FROM users WHERE username = ?", (username,)
+    ).fetchone()
+    conn.close()
+    forced = bool(user and user["must_change_password"]) or force == "1"
+    safe_settings = {k: v for k, v in settings.items() if k not in SENSITIVE_SETTING_KEYS}
+    return templates.TemplateResponse("password.html", {
+        "request": request, "settings": safe_settings,
+        "username": username, "forced": forced, "error": None,
+    })
+
+
 @app.post("/admin/password")
 async def admin_change_password(
     request: Request,
     current_password: str = Form(...),
     new_password: str = Form(...),
 ):
-    username = require_auth(request)
+    username = require_auth(request, allow_force_change=True)
+    if len(new_password) < 8:
+        raise HTTPException(status_code=400,
+                            detail="Le nouveau mot de passe doit faire au moins 8 caracteres.")
+    if new_password == "admin":
+        raise HTTPException(status_code=400,
+                            detail="Le mot de passe ne peut pas etre 'admin'.")
     conn = get_db()
     user = conn.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
     if not _bcrypt.checkpw(current_password.encode(), user["password_hash"].encode()):
         conn.close()
         raise HTTPException(status_code=400, detail="Mot de passe actuel incorrect")
     new_hash = _bcrypt.hashpw(new_password.encode(), _bcrypt.gensalt()).decode()
-    conn.execute("UPDATE users SET password_hash = ? WHERE username = ?", (new_hash, username))
+    conn.execute(
+        "UPDATE users SET password_hash = ?, must_change_password = 0 WHERE username = ?",
+        (new_hash, username),
+    )
     conn.commit()
     conn.close()
+    # Clear the must_change_password flag on the active session.
+    session_id = request.cookies.get("session_id")
+    with _sessions_lock:
+        if session_id and session_id in sessions:
+            sessions[session_id]["must_change_password"] = False
     return RedirectResponse(url="/admin", status_code=303)
 
 
@@ -894,6 +1459,130 @@ async def admin_purge_visitors(request: Request):
     conn.commit()
     conn.close()
     return RedirectResponse(url="/admin", status_code=303)
+
+
+_EVAC_SUBJECT_VALID_RE = None
+
+def _is_evac_subject_valid(s: str) -> bool:
+    """Allow only printable text with the two whitelisted placeholders {entreprise} and {date}.
+    Any other {…} placeholder is rejected (defense vs SSTI / config-poisoning typos)."""
+    import re
+    global _EVAC_SUBJECT_VALID_RE
+    if _EVAC_SUBJECT_VALID_RE is None:
+        # Find any {placeholder} that is NOT {entreprise} or {date}.
+        _EVAC_SUBJECT_VALID_RE = re.compile(r"\{(?!entreprise\}|date\})[^}]*\}")
+    if not s or "\r" in s or "\n" in s:
+        return False
+    if _EVAC_SUBJECT_VALID_RE.search(s):
+        return False
+    return True
+
+
+@app.post("/admin/evac/settings")
+async def admin_evac_settings(
+    request: Request,
+    evac_enabled: str = Form("0"),
+    evac_recipients: str = Form(""),
+    evac_subject: str = Form(""),
+    evac_body_header: str = Form(""),
+):
+    require_auth(request)
+    conn = get_db()
+    settings = get_settings(conn)
+    want_enabled = (evac_enabled == "1")
+
+    # Refuse to enable if prerequisites aren't met — avoids a "feature visible but broken" state.
+    if want_enabled:
+        has_code = bool(settings.get("evac_code_hash", ""))
+        smtp_ok = (settings.get("smtp_enabled") == "1"
+                   and settings.get("smtp_host") and settings.get("smtp_from"))
+        rcpts = parse_recipients(evac_recipients or settings.get("evac_recipients", ""))
+        host_ok = _smtp_host_safe(settings.get("smtp_host", ""))
+        if not has_code:
+            conn.close()
+            raise HTTPException(status_code=400,
+                                detail="Definissez d'abord un code a 6 chiffres avant d'activer.")
+        if not smtp_ok:
+            conn.close()
+            raise HTTPException(status_code=400,
+                                detail="Configurez et activez le SMTP (onglet Notifications) avant d'activer.")
+        if not host_ok:
+            conn.close()
+            raise HTTPException(status_code=400, detail="Hote SMTP refuse (loopback/metadata interdit).")
+        if not rcpts:
+            conn.close()
+            raise HTTPException(status_code=400,
+                                detail="Configurez au moins un destinataire valide avant d'activer.")
+
+    subject_clean = (evac_subject or "").strip()[:500]
+    if subject_clean and not _is_evac_subject_valid(subject_clean):
+        conn.close()
+        raise HTTPException(status_code=400,
+                            detail="Sujet invalide. Seuls les blocs {entreprise} et {date} sont autorises ; pas de retour a la ligne.")
+
+    conn.execute("UPDATE settings SET value = ? WHERE key = ?",
+                 ("1" if want_enabled else "0", "evac_enabled"))
+    conn.execute("UPDATE settings SET value = ? WHERE key = ?",
+                 ((evac_recipients or "").strip()[:2000], "evac_recipients"))
+    if subject_clean:
+        conn.execute("UPDATE settings SET value = ? WHERE key = ?",
+                     (subject_clean, "evac_subject"))
+    conn.execute("UPDATE settings SET value = ? WHERE key = ?",
+                 ((evac_body_header or "").strip()[:2000], "evac_body_header"))
+    conn.commit()
+    conn.close()
+    return RedirectResponse(url="/admin", status_code=303)
+
+
+@app.post("/admin/evac/purge")
+async def admin_evac_purge(request: Request):
+    require_auth(request)
+    conn = get_db()
+    conn.execute("DELETE FROM evac_log")
+    conn.commit()
+    conn.close()
+    return RedirectResponse(url="/admin", status_code=303)
+
+
+@app.post("/admin/evac/code")
+async def admin_evac_set_code(request: Request, new_code: str = Form(...)):
+    require_auth(request)
+    import re
+    code = (new_code or "").strip()
+    if not re.match(EVAC_CODE_REGEX, code):
+        return JSONResponse({"status": "error", "message": "Le code doit comporter exactement 6 chiffres"},
+                            status_code=400)
+    h = hash_evac_code(code)
+    conn = get_db()
+    conn.execute("UPDATE settings SET value = ? WHERE key = ?", (h, "evac_code_hash"))
+    conn.commit()
+    conn.close()
+    return JSONResponse({"status": "ok", "message": "Code mis a jour"})
+
+
+@app.post("/admin/evac/test")
+async def admin_evac_test(request: Request):
+    """Admin-only: test sending the evacuation email with current present visitors."""
+    require_auth(request)
+    conn = get_db()
+    settings = get_settings(conn)
+    recipients = parse_recipients(settings.get("evac_recipients", ""))
+    visitors_rows = conn.execute(
+        """SELECT v.id, v.nom, v.prenom, v.entreprise, v.arrived_at,
+                  c.prenom AS contact_prenom, c.nom AS contact_nom
+           FROM visitors v LEFT JOIN contacts c ON v.contact_id = c.id
+           WHERE v.left_at IS NULL ORDER BY v.arrived_at ASC"""
+    ).fetchall()
+    conn.close()
+    if not recipients:
+        return JSONResponse({"status": "error", "message": "Aucun destinataire valide configure"},
+                            status_code=400)
+    visitors = [dict(v) for v in visitors_rows]
+    ok, err = send_evac_email(settings, recipients, visitors)
+    if not ok:
+        return JSONResponse({"status": "error", "message": f"Erreur: {err}"}, status_code=500)
+    return JSONResponse({"status": "ok",
+                         "message": f"Email de test envoye a {len(recipients)} destinataire(s) ({len(visitors)} visiteur(s))"})
 
 
 @app.post("/admin/test-email")

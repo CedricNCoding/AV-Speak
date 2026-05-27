@@ -205,6 +205,69 @@
 
     <button class="vkb-toggle" id="vkbToggle" title="Clavier">&#9000;</button>
     <a href="/admin/login" class="admin-link">Admin</a>
+    {% if settings.get('evac_enabled', '0') == '1' %}
+    <button id="evacBtn" type="button" aria-label="Alerte evacuation" title="Alerte evacuation"
+            style="position:fixed; bottom:10px; left:10px; z-index:9999;
+                   width:42px; height:42px; border-radius:50%; border:none;
+                   background:rgba(0,0,0,0.08); color:#666; cursor:pointer;
+                   display:flex; align-items:center; justify-content:center;
+                   -webkit-tap-highlight-color:transparent; opacity:0.7;">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M12 2a2.2 2.2 0 1 1 0 4.4A2.2 2.2 0 0 1 12 2zm-1 6h2c1.1 0 2 .9 2 2v5h-1.5v7h-3v-7H9v-5c0-1.1.9-2 2-2z"/>
+        </svg>
+    </button>
+
+    <!-- Evacuation code modal -->
+    <div class="modal-overlay" id="evacModal" role="dialog" aria-modal="true" aria-labelledby="evacTitle">
+        <div class="modal-box" style="max-width:380px;">
+            <h2 id="evacTitle" style="margin-top:0;">Alerte &eacute;vacuation</h2>
+            <p style="color:#666; font-size:0.95rem; margin:0 0 12px;">
+                Saisissez le code &agrave; 6 chiffres pour envoyer la liste des visiteurs pr&eacute;sents.
+            </p>
+            <div id="evacDots" aria-label="Saisie du code"
+                 style="display:flex; gap:10px; justify-content:center; margin:18px 0 22px;">
+                <span class="evac-dot"></span><span class="evac-dot"></span><span class="evac-dot"></span>
+                <span class="evac-dot"></span><span class="evac-dot"></span><span class="evac-dot"></span>
+            </div>
+            <div id="evacKeypad" style="display:grid; grid-template-columns:repeat(3, 1fr); gap:8px;">
+                <button type="button" class="evac-key" data-digit="1">1</button>
+                <button type="button" class="evac-key" data-digit="2">2</button>
+                <button type="button" class="evac-key" data-digit="3">3</button>
+                <button type="button" class="evac-key" data-digit="4">4</button>
+                <button type="button" class="evac-key" data-digit="5">5</button>
+                <button type="button" class="evac-key" data-digit="6">6</button>
+                <button type="button" class="evac-key" data-digit="7">7</button>
+                <button type="button" class="evac-key" data-digit="8">8</button>
+                <button type="button" class="evac-key" data-digit="9">9</button>
+                <button type="button" class="evac-key evac-key-action" id="evacBksp" aria-label="Effacer">&#9003;</button>
+                <button type="button" class="evac-key" data-digit="0">0</button>
+                <button type="button" class="evac-key evac-key-cancel" id="evacCancel">Annuler</button>
+            </div>
+            <p id="evacFeedback" role="status" aria-live="polite"
+               style="text-align:center; margin:14px 0 0; min-height:1.3em; font-size:0.95rem;"></p>
+        </div>
+    </div>
+
+    <style>
+        .evac-dot {
+            width:18px; height:18px; border-radius:50%;
+            background:#e0e0e0; border:2px solid #bdbdbd; transition:background 0.15s;
+        }
+        .evac-dot.filled { background:var(--color-primary); border-color:var(--color-primary); }
+        .evac-key {
+            padding:18px 0; font-size:1.4rem; font-weight:500;
+            background:#f5f5f5; color:#333; border:none; border-radius:10px;
+            cursor:pointer; -webkit-tap-highlight-color:transparent;
+            transition:background 0.1s;
+        }
+        .evac-key:active { background:#d0d0d0; }
+        .evac-key-action { background:#ffe0b2; }
+        .evac-key-action:active { background:#ffb74d; }
+        .evac-key-cancel { background:#ffcdd2; font-size:0.95rem; }
+        .evac-key-cancel:active { background:#ef9a9a; }
+        .evac-key:disabled { opacity:0.5; cursor:default; }
+    </style>
+    {% endif %}
 
     <script>
         let selectedContactId = null;
@@ -680,6 +743,156 @@
                     showKeyboard(input);
                     manualToggle = true;
                 }
+            });
+        })();
+
+        // --- Evacuation keypad ---
+        (function() {
+            const evacBtn = document.getElementById('evacBtn');
+            if (!evacBtn) return;
+            const modal = document.getElementById('evacModal');
+            const dots = document.querySelectorAll('#evacDots .evac-dot');
+            const feedback = document.getElementById('evacFeedback');
+            const keypad = document.getElementById('evacKeypad');
+            const cancelBtn = document.getElementById('evacCancel');
+            const bkspBtn = document.getElementById('evacBksp');
+            let buffer = '';
+            let sending = false;
+            let autoCloseTimer = null;
+            // Local cooldown to discourage casual brute-forcing on the touch screen.
+            // Server-side rate-limiting is the actual defense; this is just UX.
+            let failCount = 0;
+            let cooldownUntil = 0;
+            let cooldownTimer = null;
+
+            function cooldownLeft() {
+                return Math.max(0, Math.ceil((cooldownUntil - Date.now()) / 1000));
+            }
+
+            function updateCooldownDisplay() {
+                const left = cooldownLeft();
+                if (left > 0) {
+                    feedback.style.color = '#c62828';
+                    feedback.textContent = `Trop d'essais — patientez ${left}s`;
+                    setKeypadDisabled(true);
+                    cooldownTimer = setTimeout(updateCooldownDisplay, 1000);
+                } else {
+                    cooldownTimer = null;
+                    setKeypadDisabled(false);
+                    feedback.textContent = '';
+                    feedback.style.color = '';
+                }
+            }
+
+            function triggerCooldown() {
+                failCount++;
+                let delay = 0;
+                if (failCount >= 5) delay = 300;       // 5min
+                else if (failCount >= 3) delay = 30;   // 30s
+                if (delay > 0) {
+                    cooldownUntil = Date.now() + delay * 1000;
+                    if (cooldownTimer) clearTimeout(cooldownTimer);
+                    updateCooldownDisplay();
+                }
+            }
+
+            function render() {
+                dots.forEach((d, i) => {
+                    d.classList.toggle('filled', i < buffer.length);
+                });
+            }
+
+            function reset() {
+                buffer = '';
+                feedback.textContent = '';
+                feedback.style.color = '';
+                render();
+                setKeypadDisabled(false);
+            }
+
+            function setKeypadDisabled(disabled) {
+                keypad.querySelectorAll('button').forEach(b => { b.disabled = disabled; });
+            }
+
+            function open() {
+                reset();
+                modal.classList.add('active');
+                if (autoCloseTimer) { clearTimeout(autoCloseTimer); autoCloseTimer = null; }
+                if (cooldownLeft() > 0) updateCooldownDisplay();
+            }
+
+            function close() {
+                modal.classList.remove('active');
+                reset();
+                if (autoCloseTimer) { clearTimeout(autoCloseTimer); autoCloseTimer = null; }
+            }
+
+            async function submitCode() {
+                if (sending) return;
+                sending = true;
+                setKeypadDisabled(true);
+                feedback.style.color = '#666';
+                feedback.textContent = 'Envoi en cours...';
+                try {
+                    const resp = await fetch('/api/evac/trigger', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ code: buffer })
+                    });
+                    let data = {};
+                    try { data = await resp.json(); } catch (e) {}
+                    if (resp.ok && data.ok) {
+                        failCount = 0;
+                        feedback.style.color = '#2e7d32';
+                        feedback.textContent = `Liste envoyee a ${data.sent_to} destinataire(s) (${data.visitors_count} visiteur(s))`;
+                        autoCloseTimer = setTimeout(close, 3500);
+                    } else {
+                        feedback.style.color = '#c62828';
+                        feedback.textContent = (data && data.error) ? data.error : 'Echec de l\'envoi';
+                        buffer = '';
+                        render();
+                        setKeypadDisabled(false);
+                        triggerCooldown();
+                    }
+                } catch (e) {
+                    feedback.style.color = '#c62828';
+                    feedback.textContent = 'Erreur reseau';
+                    buffer = '';
+                    render();
+                    setKeypadDisabled(false);
+                } finally {
+                    sending = false;
+                }
+            }
+
+            evacBtn.addEventListener('click', function(e) {
+                e.preventDefault();
+                open();
+            });
+            cancelBtn.addEventListener('click', close);
+            bkspBtn.addEventListener('click', function() {
+                if (sending) return;
+                if (buffer.length === 0) return;
+                buffer = buffer.slice(0, -1);
+                if (feedback.style.color === 'rgb(198, 40, 40)') feedback.textContent = '';
+                render();
+            });
+            keypad.querySelectorAll('button[data-digit]').forEach(b => {
+                b.addEventListener('click', function() {
+                    if (sending || buffer.length >= 6 || cooldownLeft() > 0) return;
+                    buffer += b.dataset.digit;
+                    if (feedback.style.color === 'rgb(198, 40, 40)') feedback.textContent = '';
+                    render();
+                    if (buffer.length === 6) submitCode();
+                });
+            });
+            // Close modal when clicking on overlay (but not on the box itself)
+            modal.addEventListener('click', function(e) {
+                if (e.target === modal) close();
+            });
+            // ESC to close
+            document.addEventListener('keydown', function(e) {
+                if (e.key === 'Escape' && modal.classList.contains('active')) close();
             });
         })();
     </script>

@@ -20,11 +20,19 @@
         </div>
     </div>
 
+    {% if must_change_pw %}
+    <div style="background:#fff3e0; border-bottom:2px solid #f57c00; padding:12px 24px; color:#bf360c; font-size:0.95rem;">
+        <strong>&#9888; S&eacute;curit&eacute; :</strong> vous utilisez encore le mot de passe par d&eacute;faut.
+        <a href="/admin/password?force=1" style="color:#bf360c; font-weight:600; margin-left:8px;">Changer maintenant &rarr;</a>
+    </div>
+    {% endif %}
+
     <div class="admin-tabs">
         <button class="admin-tab active" onclick="showTab('contacts')">Contacts</button>
         <button class="admin-tab" onclick="showTab('settings')">Apparence</button>
         <button class="admin-tab" onclick="showTab('notifications')">Notifications</button>
         <button class="admin-tab" onclick="showTab('register')">Registre</button>
+        <button class="admin-tab" onclick="showTab('evac')">&Eacute;vacuation</button>
         <button class="admin-tab" onclick="showTab('license')">Licence</button>
         <button class="admin-tab" onclick="showTab('cgu')">CGU</button>
         <button class="admin-tab" onclick="showTab('password')">Mot de passe</button>
@@ -345,7 +353,8 @@
                 </div>
                 <div class="color-row">
                     <label>Mot de passe</label>
-                    <input type="password" name="smtp_password" value="{{ settings.smtp_password }}">
+                    <input type="password" name="smtp_password" value="" autocomplete="new-password"
+                           placeholder="Laisser vide pour conserver">
                 </div>
                 <div class="color-row">
                     <label>Adresse exp&eacute;diteur</label>
@@ -395,11 +404,13 @@
                 </div>
                 <div class="color-row">
                     <label>Application Secret</label>
-                    <input type="password" name="ovh_app_secret" value="{{ settings.ovh_app_secret }}">
+                    <input type="password" name="ovh_app_secret" value="" autocomplete="new-password"
+                           placeholder="Laisser vide pour conserver">
                 </div>
                 <div class="color-row">
                     <label>Consumer Key</label>
-                    <input type="password" name="ovh_consumer_key" value="{{ settings.ovh_consumer_key }}">
+                    <input type="password" name="ovh_consumer_key" value="" autocomplete="new-password"
+                           placeholder="Laisser vide pour conserver">
                 </div>
                 <div class="color-row">
                     <label>Nom du service SMS</label>
@@ -534,6 +545,153 @@
         {% endif %}
     </div>
 
+    <!-- Evacuation panel -->
+    <div class="admin-panel" id="panel-evac">
+        <h2>Alerte &eacute;vacuation</h2>
+        <p style="font-size:0.95rem; color:#555; margin-bottom:14px; max-width:700px;">
+            En cas d'&eacute;vacuation, un visiteur ou un membre du personnel peut d&eacute;clencher,
+            depuis le kiosk, l'envoi d'un email contenant la liste des visiteurs pr&eacute;sents
+            aux destinataires d&eacute;finis ci-dessous. La saisie d'un code &agrave; 6 chiffres est requise.
+        </p>
+
+        <div style="background:#fff3e0; border-left:4px solid #f57c00; padding:12px 16px; border-radius:6px; margin-bottom:18px; font-size:0.9rem; color:#5d4037; max-width:780px;">
+            <strong>&#9888; Important — RGPD &amp; conformit&eacute; :</strong>
+            l'activation transmet des donn&eacute;es nominatives (noms, h&ocirc;tes, horaires)
+            par email &agrave; des destinataires que vous d&eacute;finissez. Vous &ecirc;tes responsable :
+            <ul style="margin:6px 0 0 18px; padding:0;">
+                <li>d'informer les visiteurs de cet usage (affichage accueil) ;</li>
+                <li>de v&eacute;rifier la fiabilit&eacute; des destinataires (boites internes recommand&eacute;es) ;</li>
+                <li>de tester mensuellement l'envoi ;</li>
+                <li>la fonction ne remplace aucun dispositif r&eacute;glementaire (PPMS, SSI, registre s&eacute;curit&eacute;).</li>
+            </ul>
+        </div>
+
+        {% if settings.get('evac_enabled','0') == '1' and not smtp_ready %}
+        <div style="background:#ffebee; border-left:4px solid #c62828; padding:12px 16px; border-radius:6px; margin-bottom:18px; font-size:0.9rem; color:#b71c1c; max-width:780px;">
+            <strong>&#9888; SMTP non configur&eacute; :</strong> l'envoi &eacute;chouera.
+            Activez et testez d'abord la configuration SMTP dans l'onglet <strong>Notifications</strong>.
+        </div>
+        {% endif %}
+
+        <form method="POST" action="/admin/evac/settings" style="margin-bottom:30px;">
+            <div class="settings-group">
+                <div class="color-row">
+                    <label>Activer la fonction</label>
+                    <select name="evac_enabled" style="width:100px;">
+                        <option value="1" {% if settings.get('evac_enabled','0') == '1' %}selected{% endif %}>Oui</option>
+                        <option value="0" {% if settings.get('evac_enabled','0') == '0' %}selected{% endif %}>Non</option>
+                    </select>
+                </div>
+                <p style="font-size:0.85rem; color:#888; margin:5px 0 15px;">
+                    L'envoi utilise la configuration <strong>SMTP de l'onglet Notifications</strong>.
+                    Pensez &agrave; v&eacute;rifier que l'envoi d'emails y est activ&eacute; et test&eacute;.
+                </p>
+            </div>
+
+            <div class="settings-group" style="padding:20px; background:#fff4e5; border-radius:12px; margin-bottom:20px;">
+                <h3>Destinataires</h3>
+                <p style="font-size:0.85rem; color:#888; margin-bottom:10px;">
+                    Adresses email destinataires de la liste d'&eacute;vacuation.
+                    Une adresse par ligne (ou s&eacute;par&eacute;es par virgules / points-virgules).
+                </p>
+                <textarea name="evac_recipients" rows="4"
+                    style="width:100%; max-width:500px; padding:10px; font-size:1rem; border:2px solid #ddd; border-radius:8px; font-family:monospace;"
+                    placeholder="securite@entreprise.com&#10;rh@entreprise.com">{{ settings.get('evac_recipients', '') }}</textarea>
+            </div>
+
+            <div class="settings-group" style="padding:20px; background:#fff4e5; border-radius:12px; margin-bottom:20px;">
+                <h3>Contenu de l'email</h3>
+                <p style="font-size:0.85rem; color:#888; margin-bottom:10px;">
+                    Blocs disponibles dans l'objet : <strong>{entreprise}</strong>, <strong>{date}</strong>.
+                    Tout autre bloc <code>{…}</code> est refus&eacute;.
+                </p>
+                <div class="color-row">
+                    <label>Objet</label>
+                    <input type="text" name="evac_subject" value="{{ settings.get('evac_subject', '') }}"
+                           style="width:100%; max-width:500px;">
+                </div>
+                <div style="margin-top:8px;">
+                    <label style="display:block; margin-bottom:5px; font-weight:500;">Texte d'introduction</label>
+                    <textarea name="evac_body_header" rows="3"
+                        style="width:100%; max-width:500px; padding:10px; font-size:1rem; border:2px solid #ddd; border-radius:8px; font-family:inherit;">{{ settings.get('evac_body_header', '') }}</textarea>
+                    <p style="font-size:0.8rem; color:#888; margin-top:5px;">
+                        Sera ins&eacute;r&eacute; avant la liste des visiteurs.
+                    </p>
+                </div>
+            </div>
+
+            <button type="submit" class="btn btn-primary">Enregistrer</button>
+            <button type="button" class="btn btn-primary btn-small" onclick="testEvac()" style="margin-left:10px;">Tester l'envoi</button>
+            <span id="evac-test-result" style="margin-left:10px; font-size:0.9rem;"></span>
+        </form>
+
+        <div class="settings-group" style="padding:20px; background:#f9f9f9; border-radius:12px; margin-bottom:20px;">
+            <h3>Code &agrave; 6 chiffres</h3>
+            <p style="font-size:0.85rem; color:#888; margin-bottom:10px;">
+                {% if evac_code_set %}
+                Un code est actuellement d&eacute;fini.
+                {% else %}
+                <span style="color:#c62828; font-weight:500;">Aucun code d&eacute;fini —
+                la fonction ne pourra pas &ecirc;tre d&eacute;clench&eacute;e tant qu'un code n'est pas saisi.</span>
+                {% endif %}
+                Le code n'est jamais affich&eacute;, il est stock&eacute; chiffr&eacute;.
+            </p>
+            <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+                <input type="password" id="new_evac_code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6"
+                    placeholder="6 chiffres" autocomplete="new-password"
+                    style="padding:12px; font-size:1.2rem; font-family:monospace; letter-spacing:0.4em;
+                           border:2px solid #ddd; border-radius:8px; width:180px; text-align:center;">
+                <button type="button" class="btn btn-primary" onclick="setEvacCode()">D&eacute;finir le code</button>
+                <span id="evac_code_result" style="font-size:0.95rem;"></span>
+            </div>
+        </div>
+
+        <div class="settings-group" style="padding:20px; background:#f9f9f9; border-radius:12px;">
+            <h3>Historique des d&eacute;clenchements (20 derniers)</h3>
+            <p style="font-size:0.8rem; color:#888; margin:0 0 10px;">
+                Conservation automatique : 90 jours. Vous pouvez purger manuellement ci-dessous.
+            </p>
+            {% if evac_log %}
+            <table class="contacts-table" style="margin-top:10px;">
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>R&eacute;sultat</th>
+                        <th>IP source</th>
+                        <th>Destinataires</th>
+                        <th>Visiteurs</th>
+                        <th>Erreur</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for l in evac_log %}
+                    <tr>
+                        <td>{{ l.triggered_at }}</td>
+                        <td>
+                            {% if l.success == 1 %}
+                            <span style="color:#2e7d32; font-weight:500;">&#10004; Envoy&eacute;</span>
+                            {% else %}
+                            <span style="color:#c62828; font-weight:500;">&#10008; &Eacute;chec</span>
+                            {% endif %}
+                        </td>
+                        <td style="font-size:0.85rem; font-family:monospace;">{{ l.source_ip or '—' }}</td>
+                        <td style="font-size:0.85rem;">{{ l.recipients or '—' }}</td>
+                        <td>{{ l.visitors_count }}</td>
+                        <td style="font-size:0.85rem; color:#c62828;">{{ l.error or '' }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            <form method="POST" action="/admin/evac/purge" style="margin-top:15px;"
+                  onsubmit="return confirm('Supprimer tout l\'historique des declenchements ?')">
+                <button type="submit" class="btn btn-small btn-danger">Purger l'historique</button>
+            </form>
+            {% else %}
+            <p style="color:#888; margin-top:10px;">Aucun d&eacute;clenchement enregistr&eacute;.</p>
+            {% endif %}
+        </div>
+    </div>
+
     <!-- License panel -->
     <div class="admin-panel" id="panel-license">
         <h2>Licence d'utilisation</h2>
@@ -581,17 +739,18 @@
         <h2>Changer le mot de passe</h2>
         <form method="POST" action="/admin/password" style="max-width:400px;">
             <div style="margin-bottom:12px;">
-                <input type="password" name="current_password" placeholder="Mot de passe actuel"
+                <input type="password" name="current_password" placeholder="Mot de passe actuel" autocomplete="current-password"
                        required style="width:100%; padding:12px; font-size:1rem; border:2px solid #ddd; border-radius:8px;">
             </div>
             <div style="margin-bottom:12px;">
-                <input type="password" name="new_password" placeholder="Nouveau mot de passe"
-                       required minlength="4" style="width:100%; padding:12px; font-size:1rem; border:2px solid #ddd; border-radius:8px;">
+                <input type="password" name="new_password" placeholder="Nouveau mot de passe (8 caract&egrave;res min)" autocomplete="new-password"
+                       required minlength="8" style="width:100%; padding:12px; font-size:1rem; border:2px solid #ddd; border-radius:8px;">
             </div>
             <button type="submit" class="btn btn-primary">Changer le mot de passe</button>
         </form>
         <p style="margin-top:15px; color:#888; font-size:0.9rem;">
-            Identifiant par d&eacute;faut : <strong>admin</strong> / Mot de passe : <strong>admin</strong>
+            Identifiant par d&eacute;faut &agrave; la 1&egrave;re connexion : <strong>admin / admin</strong> &mdash;
+            <em>doit &ecirc;tre chang&eacute; imm&eacute;diatement</em>.
         </p>
     </div>
 
@@ -655,6 +814,49 @@
                 const data = await resp.json();
                 result.textContent = data.message;
                 result.style.color = data.status === 'ok' ? '#4CAF50' : '#e53935';
+            } catch (e) {
+                result.textContent = 'Erreur de connexion';
+                result.style.color = '#e53935';
+            }
+        }
+
+        async function setEvacCode() {
+            const input = document.getElementById('new_evac_code');
+            const result = document.getElementById('evac_code_result');
+            const code = (input.value || '').trim();
+            if (!/^[0-9]{6}$/.test(code)) {
+                result.textContent = 'Le code doit comporter exactement 6 chiffres.';
+                result.style.color = '#e53935';
+                return;
+            }
+            result.textContent = 'Enregistrement...';
+            result.style.color = '#666';
+            try {
+                const formData = new FormData();
+                formData.append('new_code', code);
+                const resp = await fetch('/admin/evac/code', { method: 'POST', body: formData });
+                const data = await resp.json();
+                result.textContent = data.message;
+                result.style.color = data.status === 'ok' ? '#2e7d32' : '#e53935';
+                if (data.status === 'ok') {
+                    input.value = '';
+                    setTimeout(() => location.reload(), 1200);
+                }
+            } catch (e) {
+                result.textContent = 'Erreur de connexion';
+                result.style.color = '#e53935';
+            }
+        }
+
+        async function testEvac() {
+            const result = document.getElementById('evac-test-result');
+            result.textContent = 'Envoi en cours...';
+            result.style.color = '#666';
+            try {
+                const resp = await fetch('/admin/evac/test', { method: 'POST' });
+                const data = await resp.json();
+                result.textContent = data.message;
+                result.style.color = data.status === 'ok' ? '#2e7d32' : '#e53935';
             } catch (e) {
                 result.textContent = 'Erreur de connexion';
                 result.style.color = '#e53935';

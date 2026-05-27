@@ -163,6 +163,16 @@ else
     info "Utilisateur ${KIOSK_USER} existe deja."
 fi
 
+# Ensure the home directory exists even if the account was created earlier without -m.
+if [ ! -d "/home/${KIOSK_USER}" ]; then
+    info "Repertoire /home/${KIOSK_USER} absent, creation..."
+    mkdir -p "/home/${KIOSK_USER}"
+    chown "${KIOSK_USER}:${KIOSK_USER}" "/home/${KIOSK_USER}"
+    chmod 755 "/home/${KIOSK_USER}"
+fi
+# Make sure the audio/video/input groups are present (idempotent).
+usermod -aG audio,video,input "$KIOSK_USER" 2>/dev/null || true
+
 # --- 2.2 Auto-login sur TTY1 ---
 info "[8/10] Configuration de l'auto-login..."
 mkdir -p /etc/systemd/system/getty@tty1.service.d

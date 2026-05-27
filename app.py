@@ -156,6 +156,7 @@ def init_db():
         "email_body": "Bonjour,\n\n{civilite} {prenom} {nom} vous attend a l'accueil.\n\nVisiteur : {visiteur_nom}\nEmail visiteur : {visiteur_email}\n\nCordialement,\n{entreprise}",
         # Conexteo SMS (replaces OVH)
         "sms_enabled": "0",
+        "conexteo_app_id": "",
         "conexteo_api_key": "",
         "conexteo_sender": "",  # alphanumeric sender ID (TPOA), up to 11 chars
         "sms_body": "{civilite} {prenom} {nom} vous attend a l'accueil. Visiteur: {visiteur_nom}",
@@ -428,6 +429,7 @@ def send_sms(settings: dict, contact: dict, civilite: str,
         return
 
     api_key = settings.get("conexteo_api_key", "").strip()
+    app_id = settings.get("conexteo_app_id", "").strip() or api_key
     if not api_key:
         err = "Cle API Conexteo manquante"
         if raise_on_error:
@@ -461,7 +463,7 @@ def send_sms(settings: dict, contact: dict, civilite: str,
             payload["sender"] = sender[:11]  # TPOA alphanumeric limit
 
         headers = {
-            "X-APP-ID": api_key,
+            "X-APP-ID": app_id,
             "X-API-KEY": api_key,
             "Content-Type": "application/json",
             "Accept": "application/json",
@@ -514,7 +516,7 @@ SESSION_TTL_S = 8 * 3600
 # Keys that must never be exposed by the public /api/settings endpoint.
 SENSITIVE_SETTING_KEYS = {
     "smtp_password", "smtp_user", "smtp_host", "smtp_port", "smtp_from",
-    "conexteo_api_key", "conexteo_sender",
+    "conexteo_api_key", "conexteo_app_id", "conexteo_sender",
     "evac_code_hash", "evac_recipients", "email_subject", "email_body",
     "sms_body", "evac_subject", "evac_body_header",
 }
@@ -1241,7 +1243,7 @@ async def admin_page(request: Request, evac_error: str = ""):
     # Re-inject only the non-secret fields needed by the admin UI (passwords stay out).
     for k in ("smtp_enabled", "smtp_host", "smtp_port", "smtp_user", "smtp_from",
               "smtp_tls", "email_subject", "email_body",
-              "conexteo_sender",
+              "conexteo_app_id", "conexteo_sender",
               "sms_body", "evac_subject", "evac_body_header", "evac_recipients"):
         if k in settings:
             safe_settings[k] = settings[k]
@@ -1326,7 +1328,7 @@ async def admin_update_settings(request: Request):
                 "color_button", "color_button_text", "entreprise_nom", "phrase_accueil",
                 "smtp_enabled", "smtp_host", "smtp_port", "smtp_user", "smtp_password",
                 "smtp_from", "smtp_tls", "email_subject", "email_body",
-                "sms_enabled", "conexteo_api_key", "conexteo_sender", "sms_body",
+                "sms_enabled", "conexteo_app_id", "conexteo_api_key", "conexteo_sender", "sms_body",
                 "notif_on_announce",
                 "repeat_count", "repeat_delay",
                 "contact_fields_enabled", "kiosk_instruction", "keyboard_size", "kiosk_font_size",

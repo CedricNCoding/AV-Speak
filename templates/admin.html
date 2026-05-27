@@ -397,10 +397,19 @@
                     </select>
                 </div>
                 <div class="color-row">
+                    <label>App ID Conexteo</label>
+                    <input type="text" name="conexteo_app_id" value="{{ settings.conexteo_app_id }}"
+                           placeholder="Header X-APP-ID">
+                </div>
+                <div class="color-row">
                     <label>Cl&eacute; API Conexteo</label>
                     <input type="password" name="conexteo_api_key" value="" autocomplete="new-password"
                            placeholder="Laisser vide pour conserver">
                 </div>
+                <p style="font-size:0.85rem; color:#888; margin:-6px 0 10px 200px;">
+                    Si Conexteo te fournit une seule valeur, mets-la dans <em>Cl&eacute; API</em>
+                    et laisse <em>App ID</em> vide (elle sera utilis&eacute;e pour les deux headers).
+                </p>
                 <div class="color-row">
                     <label>Exp&eacute;diteur (optionnel)</label>
                     <input type="text" name="conexteo_sender" value="{{ settings.conexteo_sender }}"

@@ -475,8 +475,8 @@ _evac_last_success_ts: float = 0.0
 _evac_global_fails: list[float] = []
 _evac_state_lock = threading.Lock()
 _evac_dummy_hash_cache: str | None = None
-# Per-IP throttle for /api/visitors/present (small, just enough to defeat polling recon).
-_visitors_last_call: dict[str, float] = {}
+# Per-IP soft burst-limit for /api/visitors/present: list of recent timestamps.
+_visitors_last_call: dict[str, list[float]] = {}
 _visitors_lock = threading.Lock()
 
 
@@ -841,21 +841,29 @@ def _same_origin_request(request: Request) -> bool:
 
 @app.get("/api/visitors/present")
 async def visitors_present(request: Request):
-    """Return list of currently present visitors. Restricted to same-origin and
-    throttled per IP to prevent off-kiosk recon and polling-based exfiltration."""
+    """Return list of currently present visitors. Restricted to same-origin to
+    prevent off-kiosk recon (the kiosk page itself sends a same-origin Referer).
+    No hard throttle: it collided with legitimate page refreshes; same-origin
+    is the actual access-control gate."""
     if not _same_origin_request(request):
         raise HTTPException(status_code=403, detail="Origine non autorisee")
+    # Soft rate-limit: only block obvious bursts (>10 calls in 10s per IP).
     ip = _client_ip(request)
     now = _time.monotonic()
     with _visitors_lock:
-        last = _visitors_last_call.get(ip, 0.0)
-        if now - last < 3.0:  # min 3s between calls per IP — kiosk polls every 15s
+        log = _visitors_last_call.get(ip, [])
+        if not isinstance(log, list):
+            log = []  # migrate from previous (timestamp-float) shape if any
+        log = [t for t in log if now - t < 10.0]
+        if len(log) >= 10:
             raise HTTPException(status_code=429, detail="Trop de requetes")
-        _visitors_last_call[ip] = now
+        log.append(now)
+        _visitors_last_call[ip] = log
         # Opportunistic cleanup
         if len(_visitors_last_call) > 200:
-            cutoff = now - 300
-            for k in [k for k, t in _visitors_last_call.items() if t < cutoff]:
+            stale = [k for k, v in _visitors_last_call.items()
+                     if not v or (isinstance(v, list) and (not v or now - v[-1] > 60))]
+            for k in stale:
                 _visitors_last_call.pop(k, None)
     conn = get_db()
     visitors = conn.execute(

@@ -500,8 +500,13 @@
         async function loadVisitors() {
             if (!securityRegisterEnabled) return;
             try {
-                const resp = await fetch('/api/visitors/present');
-                const visitors = await resp.json();
+                const resp = await fetch('/api/visitors/present', { cache: 'no-store' });
+                // On any non-OK response (403, 429, 5xx), keep the previous display
+                // state instead of wiping the list. Retry on next poll cycle.
+                if (!resp.ok) return;
+                const data = await resp.json();
+                if (!Array.isArray(data)) return;
+                const visitors = data;
                 const section = document.getElementById('visitorsSection');
                 const list = document.getElementById('visitorsList');
                 if (visitors.length === 0) {

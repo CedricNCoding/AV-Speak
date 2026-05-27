@@ -548,6 +548,12 @@
     <!-- Evacuation panel -->
     <div class="admin-panel" id="panel-evac">
         <h2>Alerte &eacute;vacuation</h2>
+
+        {% if evac_error %}
+        <div style="background:#ffebee; border-left:4px solid #c62828; padding:12px 16px; border-radius:6px; margin-bottom:18px; font-size:0.95rem; color:#b71c1c; max-width:780px;">
+            <strong>&#9888; Action refus&eacute;e :</strong> {{ evac_error }}
+        </div>
+        {% endif %}
         <p style="font-size:0.95rem; color:#555; margin-bottom:14px; max-width:700px;">
             En cas d'&eacute;vacuation, un visiteur ou un membre du personnel peut d&eacute;clencher,
             depuis le kiosk, l'envoi d'un email contenant la liste des visiteurs pr&eacute;sents
@@ -573,11 +579,12 @@
         </div>
         {% endif %}
 
-        <form method="POST" action="/admin/evac/settings" style="margin-bottom:30px;">
+        <form method="POST" action="/admin/evac/settings" id="evacSettingsForm" style="margin-bottom:30px;"
+              onsubmit="return preflightEvac()">
             <div class="settings-group">
                 <div class="color-row">
                     <label>Activer la fonction</label>
-                    <select name="evac_enabled" style="width:100px;">
+                    <select name="evac_enabled" id="evacEnabledSelect" style="width:100px;">
                         <option value="1" {% if settings.get('evac_enabled','0') == '1' %}selected{% endif %}>Oui</option>
                         <option value="0" {% if settings.get('evac_enabled','0') == '0' %}selected{% endif %}>Non</option>
                     </select>
@@ -755,12 +762,31 @@
     </div>
 
     <script>
-        function showTab(name) {
+        function showTab(name, evt) {
             document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('active'));
             document.querySelectorAll('.admin-panel').forEach(p => p.classList.remove('active'));
-            event.target.classList.add('active');
-            document.getElementById('panel-' + name).classList.add('active');
+            const panel = document.getElementById('panel-' + name);
+            if (panel) panel.classList.add('active');
+            const trigger = (evt && evt.target) || document.querySelector('.admin-tab[onclick*="\\'' + name + '\\'"]');
+            if (trigger) trigger.classList.add('active');
         }
+        // On load, switch to the panel referenced by the URL hash (#panel-xxx),
+        // or stay on the default Contacts tab.
+        (function() {
+            const h = (window.location.hash || '').replace('#panel-', '');
+            const valid = ['contacts','settings','notifications','register','evac','license','cgu','password'];
+            if (h && valid.indexOf(h) !== -1) showTab(h);
+            // If there's an evac_error in the URL, jump to the Evac tab and remove it
+            // from the address bar so a refresh doesn't re-show the same banner.
+            const params = new URLSearchParams(window.location.search);
+            if (params.get('evac_error')) {
+                showTab('evac');
+                params.delete('evac_error');
+                const newSearch = params.toString();
+                const newUrl = window.location.pathname + (newSearch ? '?' + newSearch : '') + window.location.hash;
+                history.replaceState({}, '', newUrl);
+            }
+        })();
 
         function toggleEdit(id) {
             const row = document.getElementById('row-' + id);
@@ -818,6 +844,25 @@
                 result.textContent = 'Erreur de connexion';
                 result.style.color = '#e53935';
             }
+        }
+
+        const EVAC_CODE_SET = {{ 'true' if evac_code_set else 'false' }};
+        const EVAC_SMTP_READY = {{ 'true' if smtp_ready else 'false' }};
+
+        function preflightEvac() {
+            const sel = document.getElementById('evacEnabledSelect');
+            if (!sel || sel.value !== '1') return true;
+            const errors = [];
+            if (!EVAC_CODE_SET) errors.push('definir un code a 6 chiffres');
+            if (!EVAC_SMTP_READY) errors.push('activer et configurer le SMTP (onglet Notifications)');
+            const rcptField = document.querySelector('[name="evac_recipients"]');
+            const rcpt = rcptField ? rcptField.value.trim() : '';
+            if (!rcpt) errors.push('saisir au moins un destinataire');
+            if (errors.length > 0) {
+                alert('Avant d\'activer la fonction, vous devez :\n - ' + errors.join('\n - '));
+                return false;
+            }
+            return true;
         }
 
         async function setEvacCode() {

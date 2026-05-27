@@ -1145,7 +1145,7 @@ async def admin_cgu_accept(request: Request):
 
 
 @app.get("/admin", response_class=HTMLResponse)
-async def admin_page(request: Request):
+async def admin_page(request: Request, evac_error: str = ""):
     username = require_auth(request)
     conn = get_db()
     settings = get_settings(conn)
@@ -1201,6 +1201,7 @@ async def admin_page(request: Request):
         "must_change_pw": must_change_pw,
         "smtp_ready": smtp_ready,
         "username": username,
+        "evac_error": evac_error[:500] if evac_error else "",
     })
 
 
@@ -1391,6 +1392,17 @@ async def admin_password_page(request: Request, force: str = ""):
     })
 
 
+def _render_password_error(request: Request, username: str, message: str, forced: bool):
+    conn = get_db()
+    settings = get_settings(conn)
+    conn.close()
+    safe_settings = {k: v for k, v in settings.items() if k not in SENSITIVE_SETTING_KEYS}
+    return templates.TemplateResponse("password.html", {
+        "request": request, "settings": safe_settings,
+        "username": username, "forced": forced, "error": message,
+    }, status_code=400)
+
+
 @app.post("/admin/password")
 async def admin_change_password(
     request: Request,
@@ -1398,17 +1410,24 @@ async def admin_change_password(
     new_password: str = Form(...),
 ):
     username = require_auth(request, allow_force_change=True)
-    if len(new_password) < 8:
-        raise HTTPException(status_code=400,
-                            detail="Le nouveau mot de passe doit faire au moins 8 caracteres.")
-    if new_password == "admin":
-        raise HTTPException(status_code=400,
-                            detail="Le mot de passe ne peut pas etre 'admin'.")
+    # Determine whether the user is in forced-change mode (drives back-link rendering).
     conn = get_db()
-    user = conn.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
-    if not _bcrypt.checkpw(current_password.encode(), user["password_hash"].encode()):
+    user_row = conn.execute(
+        "SELECT must_change_password, password_hash FROM users WHERE username = ?", (username,)
+    ).fetchone()
+    forced = bool(user_row and user_row["must_change_password"])
+    if len(new_password) < 8:
         conn.close()
-        raise HTTPException(status_code=400, detail="Mot de passe actuel incorrect")
+        return _render_password_error(request, username,
+            "Le nouveau mot de passe doit faire au moins 8 caracteres.", forced)
+    if new_password == "admin":
+        conn.close()
+        return _render_password_error(request, username,
+            "Le mot de passe ne peut pas etre 'admin'.", forced)
+    if not _bcrypt.checkpw(current_password.encode(), user_row["password_hash"].encode()):
+        conn.close()
+        return _render_password_error(request, username,
+            "Mot de passe actuel incorrect.", forced)
     new_hash = _bcrypt.hashpw(new_password.encode(), _bcrypt.gensalt()).decode()
     conn.execute(
         "UPDATE users SET password_hash = ?, must_change_password = 0 WHERE username = ?",
@@ -1478,6 +1497,13 @@ def _is_evac_subject_valid(s: str) -> bool:
     return True
 
 
+def _redirect_admin_evac_error(conn, msg: str) -> RedirectResponse:
+    """Close the DB and bounce back to the Evacuation panel with a flash message."""
+    from urllib.parse import quote
+    conn.close()
+    return RedirectResponse(url=f"/admin?evac_error={quote(msg)}#panel-evac", status_code=303)
+
+
 @app.post("/admin/evac/settings")
 async def admin_evac_settings(
     request: Request,
@@ -1491,37 +1517,13 @@ async def admin_evac_settings(
     settings = get_settings(conn)
     want_enabled = (evac_enabled == "1")
 
-    # Refuse to enable if prerequisites aren't met — avoids a "feature visible but broken" state.
-    if want_enabled:
-        has_code = bool(settings.get("evac_code_hash", ""))
-        smtp_ok = (settings.get("smtp_enabled") == "1"
-                   and settings.get("smtp_host") and settings.get("smtp_from"))
-        rcpts = parse_recipients(evac_recipients or settings.get("evac_recipients", ""))
-        host_ok = _smtp_host_safe(settings.get("smtp_host", ""))
-        if not has_code:
-            conn.close()
-            raise HTTPException(status_code=400,
-                                detail="Definissez d'abord un code a 6 chiffres avant d'activer.")
-        if not smtp_ok:
-            conn.close()
-            raise HTTPException(status_code=400,
-                                detail="Configurez et activez le SMTP (onglet Notifications) avant d'activer.")
-        if not host_ok:
-            conn.close()
-            raise HTTPException(status_code=400, detail="Hote SMTP refuse (loopback/metadata interdit).")
-        if not rcpts:
-            conn.close()
-            raise HTTPException(status_code=400,
-                                detail="Configurez au moins un destinataire valide avant d'activer.")
-
+    # Always persist the editable fields first — the user shouldn't lose their
+    # input just because they ticked "activer" too early.
     subject_clean = (evac_subject or "").strip()[:500]
     if subject_clean and not _is_evac_subject_valid(subject_clean):
-        conn.close()
-        raise HTTPException(status_code=400,
-                            detail="Sujet invalide. Seuls les blocs {entreprise} et {date} sont autorises ; pas de retour a la ligne.")
+        return _redirect_admin_evac_error(
+            conn, "Sujet invalide. Seuls les blocs {entreprise} et {date} sont autorises, pas de retour a la ligne.")
 
-    conn.execute("UPDATE settings SET value = ? WHERE key = ?",
-                 ("1" if want_enabled else "0", "evac_enabled"))
     conn.execute("UPDATE settings SET value = ? WHERE key = ?",
                  ((evac_recipients or "").strip()[:2000], "evac_recipients"))
     if subject_clean:
@@ -1529,9 +1531,39 @@ async def admin_evac_settings(
                      (subject_clean, "evac_subject"))
     conn.execute("UPDATE settings SET value = ? WHERE key = ?",
                  ((evac_body_header or "").strip()[:2000], "evac_body_header"))
+
+    # Now, if the user asked to enable, verify prerequisites — saved values
+    # are kept; only the enable flag is rejected.
+    if want_enabled:
+        # Refresh after our writes.
+        settings = get_settings(conn)
+        has_code = bool(settings.get("evac_code_hash", ""))
+        smtp_ok = (settings.get("smtp_enabled") == "1"
+                   and settings.get("smtp_host") and settings.get("smtp_from"))
+        rcpts = parse_recipients(settings.get("evac_recipients", ""))
+        host_ok = _smtp_host_safe(settings.get("smtp_host", ""))
+        if not has_code:
+            conn.commit()
+            return _redirect_admin_evac_error(
+                conn, "Definissez d'abord un code a 6 chiffres avant d'activer la fonction.")
+        if not smtp_ok:
+            conn.commit()
+            return _redirect_admin_evac_error(
+                conn, "Activez et configurez d'abord le SMTP dans l'onglet Notifications.")
+        if not host_ok:
+            conn.commit()
+            return _redirect_admin_evac_error(
+                conn, "Hote SMTP refuse (loopback ou service metadata interdit).")
+        if not rcpts:
+            conn.commit()
+            return _redirect_admin_evac_error(
+                conn, "Configurez au moins un destinataire valide avant d'activer.")
+
+    conn.execute("UPDATE settings SET value = ? WHERE key = ?",
+                 ("1" if want_enabled else "0", "evac_enabled"))
     conn.commit()
     conn.close()
-    return RedirectResponse(url="/admin", status_code=303)
+    return RedirectResponse(url="/admin#panel-evac", status_code=303)
 
 
 @app.post("/admin/evac/purge")

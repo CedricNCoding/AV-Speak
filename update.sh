@@ -3,17 +3,25 @@
 #
 # Usage : sudo bash update.sh
 #
-# Etapes :
-#   1. Verifications (root, repo git, service present)
-#   2. Backup horodate de la base SQLite
-#   3. Sauvegarde des modifications locales eventuelles (git stash)
-#   4. git pull
-#   5. Mise a jour des dependances Python (pip install -r requirements.txt)
-#   6. Redemarrage du service systemd (la migration de schema tourne au demarrage)
-#   7. Verification du statut + tail des derniers logs
+# Deux modes detectes automatiquement :
 #
-# En cas d'echec apres le redemarrage, restauration automatique de la base
-# depuis le backup et arret de la procedure.
+#  A. Mode "direct"       : /opt/av-speak EST un depot git
+#                           -> git pull dans /opt/av-speak
+#
+#  B. Mode "source + cp"  : update.sh est lance depuis un clone git du repo
+#                           AV-Speak, et /opt/av-speak est un install par cp
+#                           (cas du install.sh d'origine)
+#                           -> git pull dans le clone source, puis copie des
+#                              fichiers de l'app vers /opt/av-speak
+#
+# Etapes communes :
+#   1. Detection du mode
+#   2. Backup horodate de la base SQLite (rotation 10 derniers)
+#   3. Arret du service systemd
+#   4. Mise a jour (pull direct ou pull + sync)
+#   5. pip install -r requirements.txt
+#   6. Redemarrage du service + verification
+#   7. En cas d'echec : restauration auto de la base depuis le backup
 
 set -euo pipefail
 
@@ -23,6 +31,7 @@ BACKUP_DIR="$INSTALL_DIR/backups"
 DB_FILE="$INSTALL_DIR/av_speak.db"
 TS="$(date +%Y%m%d-%H%M%S)"
 DB_BACKUP="$BACKUP_DIR/av_speak.db.bak-$TS"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Couleurs
 RED='\033[0;31m'
@@ -36,7 +45,7 @@ ok()    { echo -e "${GREEN}[OK]${NC}    $*"; }
 warn()  { echo -e "${YELLOW}[WARN]${NC}  $*"; }
 fail()  { echo -e "${RED}[ERREUR]${NC} $*" >&2; }
 
-# --- Verifications ---
+# --- Verifications de base ---
 
 if [ "$EUID" -ne 0 ]; then
     fail "Ce script doit etre execute en root (sudo bash update.sh)."
@@ -44,27 +53,61 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 if [ ! -d "$INSTALL_DIR" ]; then
-    fail "Repertoire $INSTALL_DIR introuvable. Avez-vous deja installe AV-Speak ?"
+    fail "Repertoire $INSTALL_DIR introuvable. AV-Speak n'est pas installe ?"
     exit 1
 fi
 
-cd "$INSTALL_DIR"
+# --- Detection du mode ---
 
-if [ ! -d ".git" ]; then
-    fail "$INSTALL_DIR n'est pas un depot git. Mise a jour manuelle requise."
+MODE=""
+SOURCE_DIR=""
+
+if [ -d "$INSTALL_DIR/.git" ]; then
+    MODE="direct"
+    SOURCE_DIR="$INSTALL_DIR"
+    info "Mode detecte : DIRECT ($INSTALL_DIR est un depot git)"
+elif [ -d "$SCRIPT_DIR/.git" ]; then
+    MODE="source"
+    SOURCE_DIR="$SCRIPT_DIR"
+    info "Mode detecte : SOURCE+SYNC"
+    info "  Clone source : $SOURCE_DIR"
+    info "  Cible install : $INSTALL_DIR"
+else
+    fail "Aucun depot git trouve."
+    fail "  - $INSTALL_DIR/.git absent"
+    fail "  - $SCRIPT_DIR/.git absent"
+    echo ""
+    fail "Pour utiliser ce script vous devez disposer d'un clone du repo :"
+    echo ""
+    echo "  cd ~"
+    echo "  git clone https://github.com/CedricNCoding/AV-Speak.git"
+    echo "  cd AV-Speak  # (ou : cd 'AV-Speak/Projet AV-Speak' selon la structure)"
+    echo "  sudo bash update.sh"
+    echo ""
+    fail "Alternative : convertir $INSTALL_DIR en depot git :"
+    echo ""
+    echo "  cd $INSTALL_DIR"
+    echo "  sudo git init"
+    echo "  sudo git remote add origin https://github.com/CedricNCoding/AV-Speak.git"
+    echo "  sudo git fetch origin"
+    echo "  sudo git reset --mixed origin/main"
+    echo "  sudo git checkout -- app.py templates static requirements.txt update.sh"
+    echo ""
     exit 1
 fi
 
-if ! systemctl list-unit-files | grep -q "^${SERVICE_NAME}.service"; then
-    warn "Service systemd ${SERVICE_NAME} introuvable. La mise a jour continuera"
-    warn "mais le service ne sera ni arrete ni redemarre automatiquement."
+# --- Verifications service ---
+
+if ! systemctl list-unit-files 2>/dev/null | grep -q "^${SERVICE_NAME}.service"; then
+    warn "Service systemd ${SERVICE_NAME} introuvable."
+    warn "La mise a jour continuera mais sans arret/restart automatique."
 fi
 
-info "Repertoire : $INSTALL_DIR"
-info "Branche actuelle : $(git rev-parse --abbrev-ref HEAD)"
-info "Commit actuel    : $(git rev-parse --short HEAD)"
+cd "$SOURCE_DIR"
+info "Branche : $(git rev-parse --abbrev-ref HEAD)"
+info "Commit actuel : $(git rev-parse --short HEAD)"
 
-# --- Etape 1 : check des modifications distantes ---
+# --- Etape 1 : fetch et check ---
 
 info "Etape 1/6 : recuperation des modifications distantes..."
 git fetch origin
@@ -76,19 +119,23 @@ if [ -z "$REMOTE_REV" ]; then
     exit 1
 fi
 
-if [ "$LOCAL_REV" = "$REMOTE_REV" ]; then
+if [ "$LOCAL_REV" = "$REMOTE_REV" ] && [ "$MODE" = "direct" ]; then
     ok "Deja a jour. Rien a faire."
     exit 0
 fi
 
-NB_COMMITS="$(git rev-list --count HEAD..@{u})"
-info "$NB_COMMITS nouveau(x) commit(s) a appliquer :"
-git log --oneline HEAD..@{u} | sed 's/^/    /'
+if [ "$LOCAL_REV" != "$REMOTE_REV" ]; then
+    NB_COMMITS="$(git rev-list --count HEAD..@{u})"
+    info "$NB_COMMITS nouveau(x) commit(s) a appliquer :"
+    git log --oneline HEAD..@{u} | sed 's/^/    /'
+else
+    info "Clone source deja a jour, on resynchronise quand meme $INSTALL_DIR."
+fi
 
 # --- Etape 2 : arret du service ---
 
 info "Etape 2/6 : arret du service ${SERVICE_NAME}..."
-if systemctl is-active --quiet "$SERVICE_NAME"; then
+if systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
     systemctl stop "$SERVICE_NAME"
     ok "Service arrete."
 else
@@ -101,48 +148,80 @@ info "Etape 3/6 : backup de la base SQLite..."
 mkdir -p "$BACKUP_DIR"
 if [ -f "$DB_FILE" ]; then
     cp "$DB_FILE" "$DB_BACKUP"
-    # Backup aussi les fichiers WAL/SHM s'ils existent (transactions en vol)
     [ -f "${DB_FILE}-wal" ] && cp "${DB_FILE}-wal" "${DB_BACKUP}-wal"
     [ -f "${DB_FILE}-shm" ] && cp "${DB_FILE}-shm" "${DB_BACKUP}-shm"
     ok "Backup : $DB_BACKUP"
-    # Rotation : on garde les 10 derniers backups
+    # Rotation : on garde les 10 derniers
     ls -1t "$BACKUP_DIR"/av_speak.db.bak-* 2>/dev/null | tail -n +11 | xargs -r rm -f
 else
     warn "Aucune base existante a sauvegarder ($DB_FILE absent)."
 fi
 
-# --- Etape 4 : sauvegarde des modifs locales puis pull ---
+# --- Etape 4 : pull du code (et eventuellement sync) ---
 
 info "Etape 4/6 : mise a jour du code..."
 STASHED=0
 if ! git diff --quiet || ! git diff --cached --quiet; then
-    warn "Modifications locales detectees, sauvegarde dans git stash..."
+    warn "Modifications locales detectees dans $SOURCE_DIR, sauvegarde via git stash..."
     git stash push -u -m "update.sh auto-stash $TS" || true
     STASHED=1
 fi
 
-if ! git pull --ff-only; then
-    fail "git pull a echoue (probablement merge non fast-forward)."
-    fail "Le service est arrete. Examinez 'git status' puis redemarrez :"
-    fail "    sudo systemctl start $SERVICE_NAME"
-    exit 1
+if [ "$LOCAL_REV" != "$REMOTE_REV" ]; then
+    if ! git pull --ff-only; then
+        fail "git pull a echoue (probablement merge non fast-forward)."
+        fail "Le service est arrete. Examinez 'git status' dans $SOURCE_DIR puis :"
+        fail "    sudo systemctl start $SERVICE_NAME"
+        exit 1
+    fi
+    ok "Code a jour : $(git rev-parse --short HEAD)"
 fi
-ok "Code a jour : $(git rev-parse --short HEAD)"
+
+if [ "$MODE" = "source" ]; then
+    info "Synchronisation des fichiers vers $INSTALL_DIR..."
+    # On copie les fichiers de l'app, en preservant la base, le venv, le cache TTS et piper.
+    # rsync --exclude est plus sur que cp.
+    if command -v rsync >/dev/null 2>&1; then
+        rsync -a --delete \
+            --exclude='.git/' \
+            --exclude='venv/' \
+            --exclude='av_speak.db' \
+            --exclude='av_speak.db-wal' \
+            --exclude='av_speak.db-shm' \
+            --exclude='backups/' \
+            --exclude='tts_cache/' \
+            --exclude='piper/' \
+            --exclude='.env' \
+            --exclude='__pycache__/' \
+            --exclude='*.pyc' \
+            --exclude='.DS_Store' \
+            "$SOURCE_DIR/" "$INSTALL_DIR/"
+        ok "Fichiers synchronises (rsync)."
+    else
+        warn "rsync absent, fallback en cp (moins precis)..."
+        cp -f "$SOURCE_DIR/app.py" "$INSTALL_DIR/"
+        cp -f "$SOURCE_DIR/requirements.txt" "$INSTALL_DIR/"
+        [ -f "$SOURCE_DIR/update.sh" ] && cp -f "$SOURCE_DIR/update.sh" "$INSTALL_DIR/"
+        cp -rf "$SOURCE_DIR/templates"/* "$INSTALL_DIR/templates/" 2>/dev/null || true
+        cp -rf "$SOURCE_DIR/static"/* "$INSTALL_DIR/static/" 2>/dev/null || true
+        ok "Fichiers copies (cp)."
+    fi
+fi
 
 # --- Etape 5 : dependances Python ---
 
 info "Etape 5/6 : mise a jour des dependances Python..."
-if [ -d "venv" ] && [ -f "requirements.txt" ]; then
-    ./venv/bin/pip install -q -r requirements.txt
+if [ -d "$INSTALL_DIR/venv" ] && [ -f "$INSTALL_DIR/requirements.txt" ]; then
+    "$INSTALL_DIR/venv/bin/pip" install -q -r "$INSTALL_DIR/requirements.txt"
     ok "Dependances a jour."
 else
-    warn "venv ou requirements.txt manquant, etape sautee."
+    warn "venv ou requirements.txt manquant dans $INSTALL_DIR, etape sautee."
 fi
 
-# --- Etape 6 : redemarrage et verification ---
+# --- Etape 6 : redemarrage ---
 
 info "Etape 6/6 : redemarrage du service..."
-if systemctl list-unit-files | grep -q "^${SERVICE_NAME}.service"; then
+if systemctl list-unit-files 2>/dev/null | grep -q "^${SERVICE_NAME}.service"; then
     systemctl start "$SERVICE_NAME"
     sleep 3
     if systemctl is-active --quiet "$SERVICE_NAME"; then
@@ -157,9 +236,13 @@ if systemctl list-unit-files | grep -q "^${SERVICE_NAME}.service"; then
         fi
         fail "Logs des dernieres erreurs :"
         journalctl -u "$SERVICE_NAME" -n 30 --no-pager | sed 's/^/    /'
-        fail "Le code est sur le nouveau commit mais le service est en echec."
-        fail "Pour revenir au commit precedent :"
-        fail "    cd $INSTALL_DIR && git reset --hard $LOCAL_REV && sudo systemctl start $SERVICE_NAME"
+        fail "Pour revenir au commit precedent dans $SOURCE_DIR :"
+        fail "    cd $SOURCE_DIR && git reset --hard $LOCAL_REV"
+        if [ "$MODE" = "source" ]; then
+            fail "    puis relancer : sudo bash $SOURCE_DIR/update.sh"
+        else
+            fail "    puis : sudo systemctl start $SERVICE_NAME"
+        fi
         exit 1
     fi
 else
@@ -170,12 +253,15 @@ fi
 
 echo ""
 ok "==== Mise a jour terminee ===="
+echo "  Mode             : $MODE"
+echo "  Source git       : $SOURCE_DIR"
+echo "  Install cible    : $INSTALL_DIR"
 echo "  Commit precedent : $LOCAL_REV"
-echo "  Nouveau commit   : $(git rev-parse HEAD)"
+echo "  Nouveau commit   : $(git -C "$SOURCE_DIR" rev-parse HEAD)"
 echo "  Backup base      : $DB_BACKUP"
 if [ "$STASHED" -eq 1 ]; then
     warn "Vos modifications locales sont dans git stash."
-    echo "  Pour les recuperer : cd $INSTALL_DIR && git stash pop"
+    echo "  Pour les recuperer : cd $SOURCE_DIR && git stash pop"
 fi
 echo ""
 info "Verifier le bon fonctionnement :"

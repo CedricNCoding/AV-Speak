@@ -381,9 +381,14 @@
                 </div>
             </div>
 
-            <!-- OVH SMS -->
+            <!-- Conexteo SMS -->
             <div class="settings-group" style="padding:20px; background:#f9f9f9; border-radius:12px; margin-top:20px;">
-                <h3>SMS (OVH API)</h3>
+                <h3>SMS (Conexteo)</h3>
+                <p style="font-size:0.85rem; color:#888; margin-bottom:10px;">
+                    Service d'envoi de SMS via l'API <a href="https://conexteo.com" target="_blank" style="color:var(--color-primary);">Conexteo</a>.
+                    R&eacute;cup&eacute;rez votre cl&eacute; API dans votre espace
+                    <em>Mon Compte &gt; API / Webhook</em>.
+                </p>
                 <div class="color-row">
                     <label>Activer l'envoi de SMS</label>
                     <select name="sms_enabled" style="width:100px;">
@@ -392,33 +397,14 @@
                     </select>
                 </div>
                 <div class="color-row">
-                    <label>Endpoint OVH</label>
-                    <select name="ovh_endpoint" style="width:200px;">
-                        <option value="ovh-eu" {% if settings.ovh_endpoint == 'ovh-eu' %}selected{% endif %}>ovh-eu (Europe)</option>
-                        <option value="ovh-ca" {% if settings.ovh_endpoint == 'ovh-ca' %}selected{% endif %}>ovh-ca (Canada)</option>
-                    </select>
-                </div>
-                <div class="color-row">
-                    <label>Application Key</label>
-                    <input type="text" name="ovh_app_key" value="{{ settings.ovh_app_key }}">
-                </div>
-                <div class="color-row">
-                    <label>Application Secret</label>
-                    <input type="password" name="ovh_app_secret" value="" autocomplete="new-password"
+                    <label>Cl&eacute; API Conexteo</label>
+                    <input type="password" name="conexteo_api_key" value="" autocomplete="new-password"
                            placeholder="Laisser vide pour conserver">
-                </div>
-                <div class="color-row">
-                    <label>Consumer Key</label>
-                    <input type="password" name="ovh_consumer_key" value="" autocomplete="new-password"
-                           placeholder="Laisser vide pour conserver">
-                </div>
-                <div class="color-row">
-                    <label>Nom du service SMS</label>
-                    <input type="text" name="ovh_sms_service" value="{{ settings.ovh_sms_service }}" placeholder="sms-xxx">
                 </div>
                 <div class="color-row">
                     <label>Exp&eacute;diteur (optionnel)</label>
-                    <input type="text" name="ovh_sms_sender" value="{{ settings.ovh_sms_sender }}" placeholder="MonEntreprise">
+                    <input type="text" name="conexteo_sender" value="{{ settings.conexteo_sender }}"
+                           maxlength="11" placeholder="MonEntreprise (11 car. max)">
                 </div>
 
                 <h4 style="margin-top:20px; margin-bottom:10px;">Mod&egrave;le de SMS</h4>

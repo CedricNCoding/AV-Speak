@@ -192,7 +192,7 @@ Onglet **Notifications**.
 
 **Envoyer lors d'une annonce** : Oui / Non.
 
-Si Non, aucun email/SMS n'est envoye, meme si les parametres SMTP/OVH sont remplis.
+Si Non, aucun email/SMS n'est envoye, meme si les parametres SMTP/Conexteo sont remplis.
 
 ### Configuration SMTP (email)
 
@@ -213,27 +213,25 @@ Puis renseignez le **modele d'email** :
 Cliquez **Tester l'envoi email** : un email test est envoye a l'adresse
 expediteur. Si vous voyez "Email de test envoye", c'est bon.
 
-### Configuration SMS (OVH API)
+### Configuration SMS (Conexteo)
 
-Vous devez avoir un compte OVH avec des credits SMS.
+Vous devez avoir un compte Conexteo ([conexteo.com](https://conexteo.com))
+avec des credits SMS.
 
-1. Sur [api.ovh.com/createToken](https://api.ovh.com/createToken/), generez
-   **Application Key**, **Application Secret** et **Consumer Key** avec les
-   droits : `GET /sms`, `POST /sms/*/jobs`
-2. Recuperez le **nom du service SMS** (format `sms-xxxxx-1`) dans votre
-   manager OVH
+1. Connectez-vous sur [app.conexteo.com](https://app.conexteo.com)
+2. Allez dans **Mon Compte > API / Webhook** et generez une **cle API**
 
 Remplissez :
-- **Activer** : Oui
-- **Endpoint** : `ovh-eu` (Europe) ou `ovh-ca` (Canada)
-- **Application Key** / **Application Secret** / **Consumer Key**
-- **Nom du service SMS**
-- **Expediteur** (optionnel, max 11 caracteres, sans espaces)
+- **Activer l'envoi de SMS** : Oui
+- **Cle API Conexteo** : la cle generee ci-dessus
+- **Expediteur** (optionnel, max 11 caracteres alphanumeriques)
 
 Modele SMS : variables disponibles : `{civilite}`, `{nom}`, `{prenom}`,
 `{entreprise}`, `{visiteur_nom}`.
 
-Testez avec **Tester l'envoi SMS** + un numero de telephone.
+Testez avec **Tester l'envoi SMS** + un numero de telephone (format
+international recommande : `+33612345678` ; les numeros francais
+`06...` / `07...` sont automatiquement convertis).
 
 ---
 
@@ -425,7 +423,7 @@ sudo systemctl start av-speak
 ### Le SMS ne part pas
 
 - Cliquez **Tester l'envoi SMS** + un numero valide
-- Verifiez le solde de credits SMS chez OVH
+- Verifiez le solde de credits SMS chez Conexteo
 - Verifiez les cles API (y compris le Consumer Key, souvent oublie)
 - Verifiez que le numero est au bon format : `+33612345678`
 

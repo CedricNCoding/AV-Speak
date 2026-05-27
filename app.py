@@ -118,6 +118,12 @@ def init_db():
     user_cols = [row[1] for row in conn.execute("PRAGMA table_info(users)").fetchall()]
     if "must_change_password" not in user_cols:
         conn.execute("ALTER TABLE users ADD COLUMN must_change_password INTEGER DEFAULT 0")
+    # Migration: SMS provider switched from OVH to Conexteo — drop unused legacy keys.
+    conn.execute(
+        "DELETE FROM settings WHERE key IN "
+        "('ovh_endpoint','ovh_app_key','ovh_app_secret','ovh_consumer_key',"
+        "'ovh_sms_service','ovh_sms_sender')"
+    )
     # Create default admin if not exists. The default password 'admin' is intentionally
     # weak — we flag the account so the very next login forces a password change.
     existing = conn.execute("SELECT id FROM users WHERE username = 'admin'").fetchone()
@@ -148,14 +154,10 @@ def init_db():
         "smtp_tls": "1",
         "email_subject": "Visite de {civilite} {prenom} {nom}",
         "email_body": "Bonjour,\n\n{civilite} {prenom} {nom} vous attend a l'accueil.\n\nVisiteur : {visiteur_nom}\nEmail visiteur : {visiteur_email}\n\nCordialement,\n{entreprise}",
-        # OVH SMS
+        # Conexteo SMS (replaces OVH)
         "sms_enabled": "0",
-        "ovh_endpoint": "ovh-eu",
-        "ovh_app_key": "",
-        "ovh_app_secret": "",
-        "ovh_consumer_key": "",
-        "ovh_sms_service": "",
-        "ovh_sms_sender": "",
+        "conexteo_api_key": "",
+        "conexteo_sender": "",  # alphanumeric sender ID (TPOA), up to 11 chars
         "sms_body": "{civilite} {prenom} {nom} vous attend a l'accueil. Visiteur: {visiteur_nom}",
         # Notifications
         "notif_on_announce": "1",
@@ -376,70 +378,118 @@ def send_email(settings: dict, contact: dict, civilite: str,
             raise
 
 
-# --- OVH SMS sending ---
+# --- Conexteo SMS sending ---
+
+CONEXTEO_API_BASE = "https://api.conexteo.com"
+CONEXTEO_SMS_ENDPOINT = "/messages/sms"
+
+
+def _normalize_phone(phone: str) -> str:
+    """Best-effort normalization to E.164. Accepts '+33...', '0033...', '06...' (assumed FR).
+    Conexteo accepts both national (0606...) and international (+33606...) — we normalize
+    to international for consistency and to avoid ambiguity with non-FR numbers."""
+    import re
+    if not phone:
+        return ""
+    raw = re.sub(r"[\s.\-()]", "", phone.strip())
+    if raw.startswith("+"):
+        return raw
+    if raw.startswith("00"):
+        return "+" + raw[2:]
+    if raw.startswith("0") and len(raw) == 10:
+        # French national format -> +33
+        return "+33" + raw[1:]
+    if raw.isdigit():
+        return "+" + raw
+    return raw
+
 
 def send_sms(settings: dict, contact: dict, civilite: str,
              visitor_name: str = "", visitor_email: str = "",
              raise_on_error: bool = False):
-    """Send notification SMS via OVH API."""
+    """Send notification SMS via the Conexteo HTTP API.
+
+    Endpoint : POST https://api.conexteo.com/messages/sms
+    Auth     : X-APP-ID + X-API-KEY headers (both set to the API key value)
+    Body     : {"recipients": ["+33..."], "content": "...", "sender": "<alias>",
+                "external_id": "<uuid>"}
+    Success  : HTTP 2xx. HTTP 409 means the message was already submitted with
+               the same external_id and is treated as success.
+    """
     if settings.get("sms_enabled") != "1":
         if raise_on_error:
-            raise ValueError("SMS désactivé dans les paramètres")
-        return
-    phone = contact["telephone"]
-    if not phone:
-        if raise_on_error:
-            raise ValueError("Pas de numéro de téléphone pour ce contact")
+            raise ValueError("SMS desactive dans les parametres")
         return
 
-    # Vérifications préalables
-    missing = []
-    for key in ("ovh_app_key", "ovh_app_secret", "ovh_consumer_key", "ovh_sms_service"):
-        if not settings.get(key):
-            missing.append(key)
-    if missing:
-        err = f"Paramètres OVH manquants : {', '.join(missing)}"
+    phone = _normalize_phone(contact.get("telephone", ""))
+    if not phone:
+        if raise_on_error:
+            raise ValueError("Pas de numero de telephone pour ce contact")
+        return
+
+    api_key = settings.get("conexteo_api_key", "").strip()
+    if not api_key:
+        err = "Cle API Conexteo manquante"
         if raise_on_error:
             raise ValueError(err)
         print(f"Erreur SMS: {err}")
         return
 
     try:
-        import ovh
-        client = ovh.Client(
-            endpoint=settings.get("ovh_endpoint", "ovh-eu"),
-            application_key=settings["ovh_app_key"],
-            application_secret=settings["ovh_app_secret"],
-            consumer_key=settings["ovh_consumer_key"],
-        )
+        import requests
+        import uuid as _uuid
 
         tpl_vars = dict(
             civilite=civilite, prenom=contact["prenom"],
             nom=contact["nom"], entreprise=settings.get("entreprise_nom", ""),
-            visiteur_nom=visitor_name or "Non renseigné",
-            visiteur_email=visitor_email or "Non renseigné",
+            visiteur_nom=visitor_name or "Non renseigne",
+            visiteur_email=visitor_email or "Non renseigne",
         )
         body = settings["sms_body"].format(**tpl_vars).strip()
+        # SMS hard limit: 1530 chars (10 concatenated parts) — well above realistic announce text.
+        body = body[:1530]
 
-        service = settings["ovh_sms_service"]
-        sender = settings.get("ovh_sms_sender", "")
-
-        params = {
-            "charset": "UTF-8",
-            "message": body,
-            "noStopClause": True,
-            "priority": "high",
-            "receivers": [phone],
-            "senderForResponse": True,
+        payload = {
+            "recipients": [phone],
+            "content": body,
+            # Idempotency key — Conexteo replies 409 if a request with the same
+            # external_id was already accepted (treated as success below).
+            "external_id": f"avspeak-{_uuid.uuid4()}",
         }
+        sender = settings.get("conexteo_sender", "").strip()
         if sender:
-            params["sender"] = sender
-            params["senderForResponse"] = False
+            payload["sender"] = sender[:11]  # TPOA alphanumeric limit
 
-        result = client.post(f"/sms/{service}/jobs", **params)
-        print(f"SMS envoyé à {phone} — réponse OVH: {result}")
-        if raise_on_error and result.get("invalidReceivers"):
-            raise ValueError(f"Numéros invalides : {result['invalidReceivers']}")
+        headers = {
+            "X-APP-ID": api_key,
+            "X-API-KEY": api_key,
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        }
+        url = CONEXTEO_API_BASE + CONEXTEO_SMS_ENDPOINT
+        resp = requests.post(url, headers=headers, json=payload, timeout=15)
+
+        if resp.status_code == 409:
+            # Treated as success: the message was already submitted.
+            print(f"SMS deja envoye (dedup external_id) a {phone}")
+            return
+
+        if resp.status_code >= 400:
+            try:
+                err_json = resp.json()
+            except Exception:
+                err_json = {"raw": resp.text[:300]}
+            err = f"HTTP {resp.status_code} : {err_json}"
+            print(f"Erreur SMS Conexteo: {err}")
+            if raise_on_error:
+                raise ValueError(err)
+            return
+
+        try:
+            data = resp.json()
+        except Exception:
+            data = {"raw": resp.text[:300]}
+        print(f"SMS envoye a {phone} — reponse Conexteo: {data}")
     except Exception as e:
         print(f"Erreur envoi SMS: {e}")
         if raise_on_error:
@@ -464,7 +514,7 @@ SESSION_TTL_S = 8 * 3600
 # Keys that must never be exposed by the public /api/settings endpoint.
 SENSITIVE_SETTING_KEYS = {
     "smtp_password", "smtp_user", "smtp_host", "smtp_port", "smtp_from",
-    "ovh_app_key", "ovh_app_secret", "ovh_consumer_key", "ovh_sms_service",
+    "conexteo_api_key", "conexteo_sender",
     "evac_code_hash", "evac_recipients", "email_subject", "email_body",
     "sms_body", "evac_subject", "evac_body_header",
 }
@@ -1191,11 +1241,11 @@ async def admin_page(request: Request, evac_error: str = ""):
     # Re-inject only the non-secret fields needed by the admin UI (passwords stay out).
     for k in ("smtp_enabled", "smtp_host", "smtp_port", "smtp_user", "smtp_from",
               "smtp_tls", "email_subject", "email_body",
-              "ovh_app_key", "ovh_sms_service", "ovh_sms_sender",
+              "conexteo_sender",
               "sms_body", "evac_subject", "evac_body_header", "evac_recipients"):
         if k in settings:
             safe_settings[k] = settings[k]
-    # smtp_password / ovh_app_secret / ovh_consumer_key / evac_code_hash stay hidden.
+    # smtp_password / conexteo_api_key / evac_code_hash stay hidden.
     return templates.TemplateResponse("admin.html", {
         "request": request,
         "settings": safe_settings,
@@ -1264,7 +1314,7 @@ async def admin_delete_contact(request: Request, contact_id: int):
     return RedirectResponse(url="/admin", status_code=303)
 
 
-_SECRET_SETTING_FIELDS = {"smtp_password", "ovh_app_secret", "ovh_consumer_key"}
+_SECRET_SETTING_FIELDS = {"smtp_password", "conexteo_api_key"}
 
 
 @app.post("/admin/settings")
@@ -1276,8 +1326,7 @@ async def admin_update_settings(request: Request):
                 "color_button", "color_button_text", "entreprise_nom", "phrase_accueil",
                 "smtp_enabled", "smtp_host", "smtp_port", "smtp_user", "smtp_password",
                 "smtp_from", "smtp_tls", "email_subject", "email_body",
-                "sms_enabled", "ovh_endpoint", "ovh_app_key", "ovh_app_secret",
-                "ovh_consumer_key", "ovh_sms_service", "ovh_sms_sender", "sms_body",
+                "sms_enabled", "conexteo_api_key", "conexteo_sender", "sms_body",
                 "notif_on_announce",
                 "repeat_count", "repeat_delay",
                 "contact_fields_enabled", "kiosk_instruction", "keyboard_size", "kiosk_font_size",
@@ -1295,7 +1344,7 @@ async def admin_update_settings(request: Request):
             if not re.fullmatch(r"#[0-9a-fA-F]{6}", cleaned):
                 continue
         # Strip CR/LF from any field that ends up in email headers.
-        if key in ("smtp_from", "smtp_user", "email_subject", "ovh_sms_sender", "entreprise_nom"):
+        if key in ("smtp_from", "smtp_user", "email_subject", "conexteo_sender", "entreprise_nom"):
             cleaned = _strip_header_value(cleaned)
         conn.execute("UPDATE settings SET value = ? WHERE key = ?", (cleaned, key))
     conn.commit()

@@ -748,29 +748,41 @@
     </div>
 
     <script>
-        function showTab(name, evt) {
+        function showTab(name) {
             document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('active'));
             document.querySelectorAll('.admin-panel').forEach(p => p.classList.remove('active'));
             const panel = document.getElementById('panel-' + name);
             if (panel) panel.classList.add('active');
-            const trigger = (evt && evt.target) || document.querySelector('.admin-tab[onclick*="\\'' + name + '\\'"]');
-            if (trigger) trigger.classList.add('active');
+            // Find the tab button by its inline onclick content (avoids brittle CSS selectors).
+            const needle = "'" + name + "'";
+            document.querySelectorAll('.admin-tab').forEach(btn => {
+                const oc = btn.getAttribute('onclick') || '';
+                if (oc.indexOf(needle) !== -1) btn.classList.add('active');
+            });
+            // Sync URL hash so a refresh stays on the same tab.
+            try {
+                const newHash = '#panel-' + name;
+                if (window.location.hash !== newHash) {
+                    history.replaceState({}, '',
+                        window.location.pathname + window.location.search + newHash);
+                }
+            } catch (e) { /* ignore */ }
         }
-        // On load, switch to the panel referenced by the URL hash (#panel-xxx),
-        // or stay on the default Contacts tab.
+        // On load, switch to the panel referenced by the URL hash (#panel-xxx)
+        // or to the Evac tab if an evac_error is present in the query string.
         (function() {
-            const h = (window.location.hash || '').replace('#panel-', '');
             const valid = ['contacts','settings','notifications','register','evac','license','cgu','password'];
+            const h = (window.location.hash || '').replace('#panel-', '');
             if (h && valid.indexOf(h) !== -1) showTab(h);
-            // If there's an evac_error in the URL, jump to the Evac tab and remove it
-            // from the address bar so a refresh doesn't re-show the same banner.
             const params = new URLSearchParams(window.location.search);
             if (params.get('evac_error')) {
                 showTab('evac');
                 params.delete('evac_error');
                 const newSearch = params.toString();
-                const newUrl = window.location.pathname + (newSearch ? '?' + newSearch : '') + window.location.hash;
-                history.replaceState({}, '', newUrl);
+                const newUrl = window.location.pathname
+                    + (newSearch ? '?' + newSearch : '')
+                    + window.location.hash;
+                try { history.replaceState({}, '', newUrl); } catch (e) {}
             }
         })();
 

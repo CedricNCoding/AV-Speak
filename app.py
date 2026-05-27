@@ -451,16 +451,12 @@ def send_sms(settings: dict, contact: dict, civilite: str,
         # SMS hard limit: 1530 chars (10 concatenated parts) — well above realistic announce text.
         body = body[:1530]
 
-        # Force immediate delivery. Conexteo's UI tends to mark messages as
-        # "programmé" when scheduleAt is omitted; sending the current UTC time
-        # (or any past time) makes the platform queue the message for now.
-        from datetime import timezone
-        schedule_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
-
+        # Note: scheduleAt is intentionally omitted. Sending a past or current
+        # timestamp made Conexteo park the message in "programmé" instead of
+        # dispatching it; absent field = send immediately for most providers.
         payload = {
             "recipients": [phone],
             "content": body,
-            "scheduleAt": schedule_at,
             # Idempotency key — Conexteo replies 409 if a request with the same
             # external_id was already accepted (treated as success below).
             "external_id": f"avspeak-{_uuid.uuid4()}",

@@ -99,7 +99,8 @@
         }
         .safety-box h2 { color: var(--color-primary); margin: 0 0 16px; font-size: 1.9rem; }
         .safety-text { font-size: 1.15rem; line-height: 1.6; text-align: left; white-space: pre-wrap; }
-        .safety-box img { max-width: 100%; max-height: 260px; border-radius: 10px; margin-top: 18px; }
+        /* block, sinon une image etroite laisse le bouton remonter a cote d'elle */
+        .safety-box img { display: block; max-width: 100%; max-height: 260px; border-radius: 10px; margin: 18px auto 0; }
         .safety-ack {
             margin-top: 24px; padding: 16px 44px; font-size: 1.2rem; font-weight: 500;
             background: var(--color-button); color: var(--color-button-text);
@@ -130,6 +131,8 @@
     <div class="lang-switch" id="langSwitch" role="group" aria-label="Langue / Language">
         <button type="button" class="lang-btn" data-lang="fr" lang="fr">FR</button>
         <button type="button" class="lang-btn" data-lang="en" lang="en">EN</button>
+        <button type="button" class="lang-btn" data-lang="de" lang="de">DE</button>
+        <button type="button" class="lang-btn" data-lang="nl" lang="nl">NL</button>
     </div>
 
     <div class="search-section">
@@ -336,7 +339,10 @@
         // --- i18n ---
         // Habillage de l'interface uniquement. Les textes saisis en admin (nom de
         // l'entreprise, consigne d'accueil, consignes de securite), l'annonce vocale
-        // et les notifications restent dans la langue configuree par l'exploitant.
+        // et les notifications restent dans la langue configuree par l'exploitant :
+        // pour les consignes de securite, c'est l'image qui porte le sens aupres des
+        // visiteurs etrangers.
+        // Pour ajouter une langue : un bloc ici + une pastille dans #langSwitch.
         const I18N = {
             fr: {
                 search_prompt: "Recherchez votre contact",
@@ -419,6 +425,88 @@
                 evac_sending: "Sending...",
                 evac_failed: "Sending failed",
                 evac_network_error: "Network error",
+            },
+            de: {
+                search_prompt: "Suchen Sie Ihren Ansprechpartner",
+                search_placeholder: "Vor- oder Nachnamen eingeben...",
+                top_contacts: "Häufige Kontakte",
+                visitors_present: "Anwesende Besucher",
+                no_result: "Kein Ergebnis",
+                confirm_call: "Anruf bestätigen",
+                call_question: "{name} zum Empfang rufen?",
+                field_name_required: "Ihr Nachname *",
+                field_firstname_required: "Ihr Vorname *",
+                field_company: "Firma",
+                field_name_optional: "Ihr Name (optional)",
+                field_email_optional: "Ihre E-Mail (optional)",
+                register_notice: "Registrierung erforderlich — Sicherheitsregister",
+                fields_notice: "Diese Angaben werden nicht gespeichert und dienen nur der Benachrichtigung.",
+                name_required: "Bitte geben Sie Ihren Vor- und Nachnamen an.",
+                cancel: "Abbrechen",
+                confirm: "Bestätigen",
+                confirmation: "Bestätigung",
+                validate: "Fertig",
+                announce_in_progress: "Durchsage läuft...",
+                announce_error: "Fehler bei der Durchsage",
+                broadcast_next: "Durchsage {n} — nächste in {s}s",
+                broadcast_next_of: "Durchsage {n}/{total} — nächste in {s}s",
+                broadcast_playing: "Durchsage {n} läuft...",
+                broadcast_playing_of: "Durchsage {n}/{total} läuft...",
+                meeting: "Termin",
+                since_day: "Seit {date} um {time}",
+                leave: "Abmelden",
+                leave_confirm: "Ihren Weggang bestätigen?",
+                leave_title: "Gelände verlassen",
+                safety_ack: "Verstanden",
+                safety_ack_in: "Verstanden ({s}s)",
+                key_space: "Leertaste",
+                key_enter: "OK",
+                evac_title: "Evakuierungsalarm",
+                evac_prompt: "Geben Sie den 6-stelligen Code ein, um die Liste der anwesenden Besucher zu senden.",
+                evac_sending: "Wird gesendet...",
+                evac_failed: "Senden fehlgeschlagen",
+                evac_network_error: "Netzwerkfehler",
+            },
+            nl: {
+                search_prompt: "Zoek uw contactpersoon",
+                search_placeholder: "Typ een voor- of achternaam...",
+                top_contacts: "Frequente contacten",
+                visitors_present: "Aanwezige bezoekers",
+                no_result: "Geen resultaat",
+                confirm_call: "Oproep bevestigen",
+                call_question: "{name} naar de receptie roepen?",
+                field_name_required: "Uw achternaam *",
+                field_firstname_required: "Uw voornaam *",
+                field_company: "Bedrijf",
+                field_name_optional: "Uw naam (optioneel)",
+                field_email_optional: "Uw e-mail (optioneel)",
+                register_notice: "Registratie verplicht — veiligheidsregister",
+                fields_notice: "Deze gegevens worden niet opgeslagen en dienen enkel voor de melding.",
+                name_required: "Vul uw voor- en achternaam in.",
+                cancel: "Annuleren",
+                confirm: "Bevestigen",
+                confirmation: "Bevestiging",
+                validate: "Klaar",
+                announce_in_progress: "Omroep bezig...",
+                announce_error: "Fout bij de omroep",
+                broadcast_next: "Omroep {n} — volgende over {s}s",
+                broadcast_next_of: "Omroep {n}/{total} — volgende over {s}s",
+                broadcast_playing: "Omroep {n} bezig...",
+                broadcast_playing_of: "Omroep {n}/{total} bezig...",
+                meeting: "Afspraak",
+                since_day: "Sinds {date} om {time}",
+                leave: "Afmelden",
+                leave_confirm: "Uw vertrek bevestigen?",
+                leave_title: "Het terrein verlaten",
+                safety_ack: "Begrepen",
+                safety_ack_in: "Begrepen ({s}s)",
+                key_space: "Spatie",
+                key_enter: "OK",
+                evac_title: "Evacuatiealarm",
+                evac_prompt: "Voer de 6-cijferige code in om de lijst met aanwezige bezoekers te versturen.",
+                evac_sending: "Bezig met verzenden...",
+                evac_failed: "Verzenden mislukt",
+                evac_network_error: "Netwerkfout",
             },
         };
         const DEFAULT_LANG = 'fr';

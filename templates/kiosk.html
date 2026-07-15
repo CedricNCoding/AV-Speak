@@ -69,6 +69,42 @@
             -webkit-tap-highlight-color: transparent;
         }
         .vkb-toggle:active { opacity: 0.8; }
+
+        /* Selecteur de langue */
+        .lang-switch {
+            position: fixed; top: 10px; left: 12px; z-index: 100;
+            display: flex; gap: 4px; background: var(--color-secondary);
+            border-radius: 20px; padding: 3px; box-shadow: 0 1px 4px rgba(0,0,0,0.12);
+        }
+        .lang-btn {
+            min-width: 42px; padding: 6px 10px; border: none; border-radius: 18px;
+            background: transparent; color: var(--color-text); opacity: 0.55;
+            font-size: 0.9rem; font-weight: 600; cursor: pointer;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .lang-btn.active {
+            background: var(--color-primary); color: var(--color-button-text); opacity: 1;
+        }
+
+        /* Consignes de securite */
+        .safety-overlay {
+            display: none; position: fixed; inset: 0; z-index: 9998;
+            background: rgba(0,0,0,0.75); align-items: center; justify-content: center; padding: 20px;
+        }
+        .safety-overlay.active { display: flex; }
+        .safety-box {
+            background: #fff; color: #333; border-radius: 20px; padding: 32px 40px;
+            max-width: 720px; max-height: 90vh; overflow-y: auto; text-align: center;
+            box-shadow: 0 8px 40px rgba(0,0,0,0.35);
+        }
+        .safety-box h2 { color: var(--color-primary); margin: 0 0 16px; font-size: 1.9rem; }
+        .safety-text { font-size: 1.15rem; line-height: 1.6; text-align: left; white-space: pre-wrap; }
+        .safety-box img { max-width: 100%; max-height: 260px; border-radius: 10px; margin-top: 18px; }
+        .safety-ack {
+            margin-top: 24px; padding: 16px 44px; font-size: 1.2rem; font-weight: 500;
+            background: var(--color-button); color: var(--color-button-text);
+            border: none; border-radius: 12px; cursor: pointer;
+        }
     </style>
 </head>
 <body class="kiosk-body font-{{ settings.get('kiosk_font_size', 'classique') }}">
@@ -88,12 +124,18 @@
             <img src="{{ settings.kiosk_image_url }}" alt="Instructions" style="max-width:100%; max-height:300px; border-radius:10px;">
         </div>
         {% endif %}
-        <p>Recherchez votre contact</p>
+        <p data-i18n="search_prompt">Recherchez votre contact</p>
+    </div>
+
+    <div class="lang-switch" id="langSwitch" role="group" aria-label="Langue / Language">
+        <button type="button" class="lang-btn" data-lang="fr" lang="fr">FR</button>
+        <button type="button" class="lang-btn" data-lang="en" lang="en">EN</button>
     </div>
 
     <div class="search-section">
         <input type="text" class="search-input" id="searchInput"
                placeholder="Tapez un nom ou un pr&eacute;nom..."
+               data-i18n-placeholder="search_placeholder"
                autocomplete="off" autofocus>
     </div>
 
@@ -102,7 +144,7 @@
     </div>
 
     <div class="top-section" id="topSection">
-        <h2>Contacts fr&eacute;quents</h2>
+        <h2 data-i18n="top_contacts">Contacts fr&eacute;quents</h2>
         <div class="top-grid" id="topGrid">
             {% for c in top_contacts %}
             <button class="top-btn" onclick="confirmAnnounce({{ c.id }}, '{{ c.prenom }}', '{{ c.nom }}')">
@@ -114,34 +156,39 @@
 
     <!-- Present visitors section (security register) -->
     <div id="visitorsSection" class="top-section" style="display:none;">
-        <h2>Visiteurs pr&eacute;sents</h2>
+        <h2 data-i18n="visitors_present">Visiteurs pr&eacute;sents</h2>
         <div id="visitorsList" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:12px;"></div>
     </div>
 
     <!-- Confirmation modal -->
     <div class="modal-overlay" id="confirmModal">
         <div class="modal-box">
-            <h2>Confirmer l'appel</h2>
+            <h2 data-i18n="confirm_call">Confirmer l'appel</h2>
             <p id="confirmText"></p>
 
             {% if settings.get('security_register_enabled', '0') == '1' %}
             <div class="visitor-fields">
-                <input type="text" id="visitorName" placeholder="Votre nom *" required>
-                <input type="text" id="visitorPrenom" placeholder="Votre pr&eacute;nom *" required>
-                <input type="text" id="visitorEntreprise" placeholder="Entreprise" style="width:98%;">
-                <p class="visitor-notice">Enregistrement obligatoire — registre de s&eacute;curit&eacute;</p>
+                <input type="text" id="visitorName" placeholder="Votre nom *"
+                       data-i18n-placeholder="field_name_required" required>
+                <input type="text" id="visitorPrenom" placeholder="Votre pr&eacute;nom *"
+                       data-i18n-placeholder="field_firstname_required" required>
+                <input type="text" id="visitorEntreprise" placeholder="Entreprise"
+                       data-i18n-placeholder="field_company" style="width:98%;">
+                <p class="visitor-notice" data-i18n="register_notice">Enregistrement obligatoire — registre de s&eacute;curit&eacute;</p>
             </div>
             {% elif settings.get('contact_fields_enabled', '1') == '1' %}
             <div class="visitor-fields">
-                <input type="text" id="visitorName" placeholder="Votre nom (facultatif)">
-                <input type="email" id="visitorEmail" placeholder="Votre email (facultatif)">
-                <p class="visitor-notice">Ces informations ne sont pas stock&eacute;es et servent uniquement &agrave; la notification.</p>
+                <input type="text" id="visitorName" placeholder="Votre nom (facultatif)"
+                       data-i18n-placeholder="field_name_optional">
+                <input type="email" id="visitorEmail" placeholder="Votre email (facultatif)"
+                       data-i18n-placeholder="field_email_optional">
+                <p class="visitor-notice" data-i18n="fields_notice">Ces informations ne sont pas stock&eacute;es et servent uniquement &agrave; la notification.</p>
             </div>
             {% endif %}
 
             <div class="modal-actions" style="margin-top:20px;">
-                <button class="btn-cancel" onclick="closeModal()">Annuler</button>
-                <button class="btn-confirm" id="confirmBtn" onclick="doAnnounce()"
+                <button class="btn-cancel" data-i18n="cancel" onclick="closeModal()">Annuler</button>
+                <button class="btn-confirm" id="confirmBtn" data-i18n="confirm" onclick="doAnnounce()"
                         style="background: var(--color-button); color: var(--color-button-text);">
                     Confirmer
                 </button>
@@ -155,7 +202,7 @@
             <div class="checkmark">&#10004;</div>
             <p id="successText">Annonce en cours...</p>
             <p id="repeatInfo" style="font-size:0.95rem; color:#888; margin-top:8px; display:none;"></p>
-            <button id="validateBtn" onclick="stopRepeat()"
+            <button id="validateBtn" data-i18n="validate" onclick="stopRepeat()"
                     style="display:none; margin-top:18px; padding:14px 40px; font-size:1.2rem;
                            background:var(--color-button); color:var(--color-button-text);
                            border:none; border-radius:12px; cursor:pointer;">
@@ -163,6 +210,22 @@
             </button>
         </div>
     </div>
+
+    {% if settings.get('safety_enabled', '0') == '1' and (settings.get('safety_text', '') or settings.get('safety_image_url', '')) %}
+    <!-- Safety instructions: shown once the announce is done, while the visitor waits -->
+    <div class="safety-overlay" id="safetyOverlay" role="dialog" aria-modal="true" aria-labelledby="safetyTitle">
+        <div class="safety-box">
+            <h2 id="safetyTitle">{{ settings.get('safety_title', '') }}</h2>
+            {% if settings.get('safety_text', '') %}
+            <div class="safety-text">{{ settings.get('safety_text', '') }}</div>
+            {% endif %}
+            {% if settings.get('safety_image_url', '') %}
+            <img src="{{ settings.safety_image_url }}" alt="">
+            {% endif %}
+            <button type="button" class="safety-ack" id="safetyAck" data-i18n="safety_ack">J'ai compris</button>
+        </div>
+    </div>
+    {% endif %}
 
     {% if license_status.expired %}
     <!-- License expired blocker -->
@@ -194,8 +257,8 @@
             <h2 id="customConfirmTitle">Confirmation</h2>
             <p id="customConfirmMessage"></p>
             <div class="modal-actions" style="margin-top:20px;">
-                <button class="btn-cancel" id="customConfirmNo">Annuler</button>
-                <button class="btn-confirm" id="customConfirmYes"
+                <button class="btn-cancel" id="customConfirmNo" data-i18n="cancel">Annuler</button>
+                <button class="btn-confirm" id="customConfirmYes" data-i18n="confirm"
                         style="background: var(--color-button); color: var(--color-button-text);">
                     Confirmer
                 </button>
@@ -220,8 +283,8 @@
     <!-- Evacuation code modal -->
     <div class="modal-overlay" id="evacModal" role="dialog" aria-modal="true" aria-labelledby="evacTitle">
         <div class="modal-box" style="max-width:380px;">
-            <h2 id="evacTitle" style="margin-top:0;">Alerte &eacute;vacuation</h2>
-            <p style="color:#666; font-size:0.95rem; margin:0 0 12px;">
+            <h2 id="evacTitle" style="margin-top:0;" data-i18n="evac_title">Alerte &eacute;vacuation</h2>
+            <p style="color:#666; font-size:0.95rem; margin:0 0 12px;" data-i18n="evac_prompt">
                 Saisissez le code &agrave; 6 chiffres pour envoyer la liste des visiteurs pr&eacute;sents.
             </p>
             <div id="evacDots" aria-label="Saisie du code"
@@ -241,7 +304,7 @@
                 <button type="button" class="evac-key" data-digit="9">9</button>
                 <button type="button" class="evac-key evac-key-action" id="evacBksp" aria-label="Effacer">&#9003;</button>
                 <button type="button" class="evac-key" data-digit="0">0</button>
-                <button type="button" class="evac-key evac-key-cancel" id="evacCancel">Annuler</button>
+                <button type="button" class="evac-key evac-key-cancel" id="evacCancel" data-i18n="cancel">Annuler</button>
             </div>
             <p id="evacFeedback" role="status" aria-live="polite"
                style="text-align:center; margin:14px 0 0; min-height:1.3em; font-size:0.95rem;"></p>
@@ -270,6 +333,130 @@
     {% endif %}
 
     <script>
+        // --- i18n ---
+        // Habillage de l'interface uniquement. Les textes saisis en admin (nom de
+        // l'entreprise, consigne d'accueil, consignes de securite), l'annonce vocale
+        // et les notifications restent dans la langue configuree par l'exploitant.
+        const I18N = {
+            fr: {
+                search_prompt: "Recherchez votre contact",
+                search_placeholder: "Tapez un nom ou un prénom...",
+                top_contacts: "Contacts fréquents",
+                visitors_present: "Visiteurs présents",
+                no_result: "Aucun résultat",
+                confirm_call: "Confirmer l'appel",
+                call_question: "Appeler {name} à l'accueil ?",
+                field_name_required: "Votre nom *",
+                field_firstname_required: "Votre prénom *",
+                field_company: "Entreprise",
+                field_name_optional: "Votre nom (facultatif)",
+                field_email_optional: "Votre email (facultatif)",
+                register_notice: "Enregistrement obligatoire — registre de sécurité",
+                fields_notice: "Ces informations ne sont pas stockées et servent uniquement à la notification.",
+                name_required: "Veuillez renseigner votre nom et prénom.",
+                cancel: "Annuler",
+                confirm: "Confirmer",
+                confirmation: "Confirmation",
+                validate: "Valider",
+                announce_in_progress: "Annonce en cours...",
+                announce_error: "Erreur lors de l'annonce",
+                broadcast_next: "Diffusion {n} — prochaine dans {s}s",
+                broadcast_next_of: "Diffusion {n}/{total} — prochaine dans {s}s",
+                broadcast_playing: "Diffusion {n} en cours...",
+                broadcast_playing_of: "Diffusion {n}/{total} en cours...",
+                meeting: "RDV",
+                since_day: "Depuis le {date} à {time}",
+                leave: "Quitter",
+                leave_confirm: "Confirmer votre départ ?",
+                leave_title: "Quitter les lieux",
+                safety_ack: "J'ai compris",
+                safety_ack_in: "J'ai compris ({s}s)",
+                key_space: "Espace",
+                key_enter: "OK",
+                evac_title: "Alerte évacuation",
+                evac_prompt: "Saisissez le code à 6 chiffres pour envoyer la liste des visiteurs présents.",
+                evac_sending: "Envoi en cours...",
+                evac_failed: "Echec de l'envoi",
+                evac_network_error: "Erreur reseau",
+            },
+            en: {
+                search_prompt: "Search for your contact",
+                search_placeholder: "Type a first or last name...",
+                top_contacts: "Frequent contacts",
+                visitors_present: "Visitors on site",
+                no_result: "No result",
+                confirm_call: "Confirm the call",
+                call_question: "Call {name} to reception?",
+                field_name_required: "Your last name *",
+                field_firstname_required: "Your first name *",
+                field_company: "Company",
+                field_name_optional: "Your name (optional)",
+                field_email_optional: "Your email (optional)",
+                register_notice: "Registration required — security register",
+                fields_notice: "This information is not stored and is used only for the notification.",
+                name_required: "Please enter your first and last name.",
+                cancel: "Cancel",
+                confirm: "Confirm",
+                confirmation: "Confirmation",
+                validate: "Done",
+                announce_in_progress: "Announcing...",
+                announce_error: "Announcement failed",
+                broadcast_next: "Broadcast {n} — next in {s}s",
+                broadcast_next_of: "Broadcast {n}/{total} — next in {s}s",
+                broadcast_playing: "Broadcast {n} in progress...",
+                broadcast_playing_of: "Broadcast {n}/{total} in progress...",
+                meeting: "Visiting",
+                since_day: "Since {date} at {time}",
+                leave: "Sign out",
+                leave_confirm: "Confirm your departure?",
+                leave_title: "Leaving the site",
+                safety_ack: "I understand",
+                safety_ack_in: "I understand ({s}s)",
+                key_space: "Space",
+                key_enter: "OK",
+                evac_title: "Evacuation alert",
+                evac_prompt: "Enter the 6-digit code to send the list of visitors on site.",
+                evac_sending: "Sending...",
+                evac_failed: "Sending failed",
+                evac_network_error: "Network error",
+            },
+        };
+        const DEFAULT_LANG = 'fr';
+        let currentLang = DEFAULT_LANG;
+
+        function t(key, vars) {
+            let s = (I18N[currentLang] && I18N[currentLang][key]) || I18N[DEFAULT_LANG][key] || key;
+            if (vars) {
+                for (const k in vars) s = s.split('{' + k + '}').join(vars[k]);
+            }
+            return s;
+        }
+
+        function setLang(lang) {
+            currentLang = I18N[lang] ? lang : DEFAULT_LANG;
+            document.documentElement.lang = currentLang;
+            document.querySelectorAll('[data-i18n]').forEach(el => {
+                el.textContent = t(el.getAttribute('data-i18n'));
+            });
+            document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
+                el.placeholder = t(el.getAttribute('data-i18n-placeholder'));
+            });
+            document.querySelectorAll('.lang-btn').forEach(b => {
+                b.classList.toggle('active', b.getAttribute('data-lang') === currentLang);
+            });
+            // The keyboard is built in JS, so its labels need a rebuild.
+            if (typeof window.rebuildKeyboard === 'function') window.rebuildKeyboard();
+        }
+
+        document.querySelectorAll('.lang-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                setLang(btn.getAttribute('data-lang'));
+                // Visitor cards are built in JS too, but only this path needs a redraw:
+                // resetKiosk() reloads them on its own.
+                if (securityRegisterEnabled) loadVisitors();
+            });
+        });
+
         let selectedContactId = null;
         let searchTimeout = null;
         let repeatTimer = null;
@@ -299,7 +486,7 @@
             const contacts = await resp.json();
             resultsList.innerHTML = '';
             if (contacts.length === 0) {
-                resultsList.innerHTML = '<li style="padding:20px; text-align:center; font-size:1.2rem; color:#999;">Aucun r\u00e9sultat</li>';
+                resultsList.innerHTML = `<li style="padding:20px; text-align:center; font-size:1.2rem; color:#999;">${escapeHtml(t('no_result'))}</li>`;
             } else {
                 contacts.forEach(c => {
                     const li = document.createElement('li');
@@ -316,7 +503,7 @@
         function confirmAnnounce(id, prenom, nom) {
             selectedContactId = id;
             document.getElementById('confirmText').textContent =
-                `Appeler ${prenom} ${nom} \u00e0 l'accueil ?`;
+                t('call_question', { name: `${prenom} ${nom}` });
             if (securityRegisterEnabled) {
                 document.getElementById('visitorName').value = '';
                 document.getElementById('visitorPrenom').value = '';
@@ -341,14 +528,54 @@
             document.getElementById('validateBtn').style.display = 'none';
             document.getElementById('repeatInfo').style.display = 'none';
             if (securityRegisterEnabled) loadVisitors();
+            setLang(DEFAULT_LANG);  // next visitor starts from the house language
         }
 
         function stopRepeat() {
             repeatStopped = true;
             if (repeatTimer) { clearTimeout(repeatTimer); repeatTimer = null; }
             if (currentAudio) { currentAudio.pause(); currentAudio = null; }
+            finishAnnounce();
+        }
+
+        // --- Safety instructions ---
+        // Shown once the contact has actually been called: the site rules matter, and
+        // the wait gives the visitor something to read while their contact comes down.
+        const safetyDuration = parseInt('{{ settings.get("safety_duration", "20") }}', 10) || 0;
+        let safetyTimer = null;
+
+        function finishAnnounce() {
+            const overlay = document.getElementById('safetyOverlay');
+            if (!overlay) { resetKiosk(); return; }  // feature off, or no content entered
+            document.getElementById('successOverlay').classList.remove('active');
+            overlay.classList.add('active');
+
+            const ack = document.getElementById('safetyAck');
+            if (safetyTimer) { clearInterval(safetyTimer); safetyTimer = null; }
+            if (safetyDuration > 0) {
+                let remaining = safetyDuration;
+                ack.textContent = t('safety_ack_in', { s: remaining });
+                safetyTimer = setInterval(() => {
+                    remaining--;
+                    if (remaining <= 0) { closeSafety(); return; }
+                    ack.textContent = t('safety_ack_in', { s: remaining });
+                }, 1000);
+            } else {
+                ack.textContent = t('safety_ack');
+            }
+        }
+
+        function closeSafety() {
+            if (safetyTimer) { clearInterval(safetyTimer); safetyTimer = null; }
+            const overlay = document.getElementById('safetyOverlay');
+            if (overlay) overlay.classList.remove('active');
             resetKiosk();
         }
+
+        (function() {
+            const ack = document.getElementById('safetyAck');
+            if (ack) ack.addEventListener('click', closeSafety);
+        })();
 
         function playAudioOnce(audioUrl) {
             return new Promise(resolve => {
@@ -372,7 +599,7 @@
                 visitorPrenom = document.getElementById('visitorPrenom').value.trim();
                 visitorEntreprise = document.getElementById('visitorEntreprise').value.trim();
                 if (!visitorName || !visitorPrenom) {
-                    alert('Veuillez renseigner votre nom et pr\u00e9nom.');
+                    alert(t('name_required'));
                     return;
                 }
             } else if (contactFieldsEnabled) {
@@ -385,9 +612,11 @@
             const validateBtn = document.getElementById('validateBtn');
             const repeatInfo = document.getElementById('repeatInfo');
             overlay.classList.add('active');
+            document.getElementById('successText').textContent = t('announce_in_progress');
             validateBtn.style.display = 'none';
             repeatInfo.style.display = 'none';
             repeatStopped = false;
+            let announceFailed = false;
 
             try {
                 const params = new URLSearchParams();
@@ -398,6 +627,9 @@
                 const url = '/api/announce/' + contactId + (params.toString() ? '?' + params.toString() : '');
                 const resp = await fetch(url, { method: 'POST' });
                 const data = await resp.json();
+                // A refusal (expired licence, unknown contact) comes back as JSON, not
+                // as a thrown error, so check the status: nobody has been called.
+                if (!resp.ok) throw new Error(data && data.detail ? data.detail : 'announce failed');
                 document.getElementById('successText').textContent = data.message;
 
                 const repeatCount = data.repeat_count || 1;
@@ -414,7 +646,7 @@
                     if (repeatStopped) return;
 
                     if (!needsRepeat) {
-                        resetKiosk();
+                        finishAnnounce();
                         return;
                     }
 
@@ -425,9 +657,9 @@
                     while (played < maxPlays && !repeatStopped) {
                         // Update info
                         if (repeatCount === 0) {
-                            repeatInfo.textContent = `Diffusion ${played} — prochaine dans ${repeatDelay}s`;
+                            repeatInfo.textContent = t('broadcast_next', { n: played, s: repeatDelay });
                         } else {
-                            repeatInfo.textContent = `Diffusion ${played}/${repeatCount} — prochaine dans ${repeatDelay}s`;
+                            repeatInfo.textContent = t('broadcast_next_of', { n: played, total: repeatCount, s: repeatDelay });
                         }
                         repeatInfo.style.display = 'block';
 
@@ -438,9 +670,9 @@
                                 if (repeatStopped) { resolve(); return; }
                                 if (remaining <= 0) { resolve(); return; }
                                 if (repeatCount === 0) {
-                                    repeatInfo.textContent = `Diffusion ${played} — prochaine dans ${remaining}s`;
+                                    repeatInfo.textContent = t('broadcast_next', { n: played, s: remaining });
                                 } else {
-                                    repeatInfo.textContent = `Diffusion ${played}/${repeatCount} — prochaine dans ${remaining}s`;
+                                    repeatInfo.textContent = t('broadcast_next_of', { n: played, total: repeatCount, s: remaining });
                                 }
                                 remaining--;
                                 repeatTimer = setTimeout(tick, 1000);
@@ -453,23 +685,26 @@
                         // Play again
                         played++;
                         if (repeatCount === 0) {
-                            repeatInfo.textContent = `Diffusion ${played} en cours...`;
+                            repeatInfo.textContent = t('broadcast_playing', { n: played });
                         } else {
-                            repeatInfo.textContent = `Diffusion ${played}/${repeatCount} en cours...`;
+                            repeatInfo.textContent = t('broadcast_playing_of', { n: played, total: repeatCount });
                         }
                         await playAudioOnce(data.audio_url);
                         if (repeatStopped) return;
                     }
 
                     // All repeats done
-                    resetKiosk();
+                    finishAnnounce();
                     return;
                 }
             } catch (e) {
-                document.getElementById('successText').textContent = 'Erreur lors de l\'annonce';
+                announceFailed = true;
+                document.getElementById('successText').textContent = t('announce_error');
             }
 
-            setTimeout(() => { resetKiosk(); }, 4000);
+            // Reached when the announce had no audio, or failed. On failure, skip the
+            // safety screen — nobody has actually been called.
+            setTimeout(() => { announceFailed ? resetKiosk() : finishAnnounce(); }, 4000);
         }
 
         function escapeHtml(text) {
@@ -478,16 +713,20 @@
             return div.innerHTML;
         }
 
-        // Reset to home after 30s of inactivity (only when not in repeat mode)
+        // Reset to home after 30s of inactivity (only when not in repeat mode, and not
+        // while the safety instructions are up — those close on their own).
         let inactivityTimer;
         function resetInactivity() {
             clearTimeout(inactivityTimer);
             inactivityTimer = setTimeout(() => {
+                const safety = document.getElementById('safetyOverlay');
+                if (safety && safety.classList.contains('active')) return;
                 if (!document.getElementById('successOverlay').classList.contains('active')) {
                     searchInput.value = '';
                     resultsSection.style.display = 'none';
                     topSection.style.display = 'block';
                     closeModal();
+                    setLang(DEFAULT_LANG);
                 }
             }, 30000);
         }
@@ -497,6 +736,14 @@
         resetInactivity();
 
         // --- Security register: present visitors ---
+        // The server writes arrived_at as local "YYYY-MM-DD HH:MM:SS". Parsed by hand
+        // rather than via Date(), whose handling of that space-separated shape varies.
+        function formatArrival(ts) {
+            const m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/.exec(ts || '');
+            if (!m) return '';
+            return t('since_day', { date: `${m[3]}/${m[2]}`, time: `${m[4]}:${m[5]}` });
+        }
+
         async function loadVisitors() {
             if (!securityRegisterEnabled) return;
             try {
@@ -522,11 +769,11 @@
                     info.style.cssText = 'flex:1; min-width:0;';
                     let html = `<strong>${escapeHtml(v.prenom)} ${escapeHtml(v.nom)}</strong>`;
                     if (v.entreprise) html += `<br><span style="font-size:0.85rem; color:#888;">${escapeHtml(v.entreprise)}</span>`;
-                    if (v.contact_prenom || v.contact_nom) html += `<br><span style="font-size:0.85rem; color:var(--color-primary);">RDV : ${escapeHtml(v.contact_prenom || '')} ${escapeHtml(v.contact_nom || '')}</span>`;
-                    html += `<br><span style="font-size:0.8rem; color:#aaa;">Depuis ${v.arrived_at.slice(11, 16)}</span>`;
+                    if (v.contact_prenom || v.contact_nom) html += `<br><span style="font-size:0.85rem; color:var(--color-primary);">${escapeHtml(t('meeting'))} : ${escapeHtml(v.contact_prenom || '')} ${escapeHtml(v.contact_nom || '')}</span>`;
+                    html += `<br><span style="font-size:0.8rem; color:#aaa;">${escapeHtml(formatArrival(v.arrived_at))}</span>`;
                     info.innerHTML = html;
                     const btn = document.createElement('button');
-                    btn.textContent = 'Quitter';
+                    btn.textContent = t('leave');
                     btn.style.cssText = 'padding:10px 20px; font-size:1rem; background:#e53935; color:#fff; border:none; border-radius:10px; cursor:pointer; flex-shrink:0;';
                     btn.onclick = () => visitorLeave(v.id);
                     card.appendChild(info);
@@ -538,7 +785,7 @@
 
         function customConfirm(message, title) {
             return new Promise(resolve => {
-                document.getElementById('customConfirmTitle').textContent = title || 'Confirmation';
+                document.getElementById('customConfirmTitle').textContent = title || t('confirmation');
                 document.getElementById('customConfirmMessage').textContent = message;
                 const modal = document.getElementById('customConfirm');
                 modal.classList.add('active');
@@ -558,13 +805,16 @@
         }
 
         async function visitorLeave(id) {
-            const ok = await customConfirm('Confirmer votre d\u00e9part ?', 'Quitter les lieux');
+            const ok = await customConfirm(t('leave_confirm'), t('leave_title'));
             if (!ok) return;
             try {
                 await fetch('/api/visitors/' + id + '/leave', { method: 'POST' });
                 loadVisitors();
             } catch (e) {}
         }
+
+        // Marks the FR pill active. The page ships in French, so nothing else moves.
+        setLang(DEFAULT_LANG);
 
         // Load visitors on start and refresh every 15s
         if (securityRegisterEnabled) {
@@ -628,7 +878,7 @@
                         btn.style.height = 'var(--vkb-key-h)';
                         btn.style.fontSize = 'var(--vkb-font)';
                         if (key === '{space}') {
-                            btn.textContent = 'Espace';
+                            btn.textContent = t('key_space');
                             btn.classList.add('space');
                         } else if (key === '{bksp}') {
                             btn.innerHTML = '&#9003;';
@@ -638,7 +888,7 @@
                             btn.classList.add('wide');
                             if (shifted) btn.classList.add('active-shift');
                         } else if (key === '{enter}') {
-                            btn.textContent = 'OK';
+                            btn.textContent = t('key_enter');
                             btn.classList.add('wide');
                         } else if (key === '{hide}') {
                             btn.innerHTML = '&#9660;';
@@ -749,6 +999,11 @@
                     manualToggle = true;
                 }
             });
+
+            // Let setLang() relabel the Espace/OK keys when the visitor switches language.
+            window.rebuildKeyboard = function() {
+                if (overlay.classList.contains('active')) buildKeyboard();
+            };
         })();
 
         // --- Evacuation keypad ---
@@ -837,7 +1092,7 @@
                 sending = true;
                 setKeypadDisabled(true);
                 feedback.style.color = '#666';
-                feedback.textContent = 'Envoi en cours...';
+                feedback.textContent = t('evac_sending');
                 try {
                     const resp = await fetch('/api/evac/trigger', {
                         method: 'POST',
@@ -853,7 +1108,7 @@
                         autoCloseTimer = setTimeout(close, 3500);
                     } else {
                         feedback.style.color = '#c62828';
-                        feedback.textContent = (data && data.error) ? data.error : 'Echec de l\'envoi';
+                        feedback.textContent = (data && data.error) ? data.error : t('evac_failed');
                         buffer = '';
                         render();
                         setKeypadDisabled(false);
@@ -861,7 +1116,7 @@
                     }
                 } catch (e) {
                     feedback.style.color = '#c62828';
-                    feedback.textContent = 'Erreur reseau';
+                    feedback.textContent = t('evac_network_error');
                     buffer = '';
                     render();
                     setKeypadDisabled(false);

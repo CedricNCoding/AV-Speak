@@ -180,6 +180,17 @@ def init_db():
         # Security register
         "security_register_enabled": "0",
         "security_register_history": "1",
+        # Auto-checkout: visitors routinely forget to sign out, so the present list
+        # (which also feeds the evacuation roll call) fills up with people long gone.
+        "visitor_auto_leave_enabled": "1",
+        "visitor_auto_leave_hours": "14",
+        # Safety instructions shown after an announce, while the visitor waits for
+        # their contact. Off until an admin has entered the actual site rules.
+        "safety_enabled": "0",
+        "safety_title": "Consignes de securite",
+        "safety_text": "",
+        "safety_image_url": "",
+        "safety_duration": "20",
         # Evacuation alert
         "evac_enabled": "0",
         "evac_code_hash": "",
@@ -900,6 +911,58 @@ def _same_origin_request(request: Request) -> bool:
     return ref_host == host
 
 
+# --- Visitor auto-checkout ---
+# Visitors routinely walk out without pressing "Quitter", so the present list grows
+# stale. Sweep anyone who has been "present" longer than the configured delay.
+_AUTO_LEAVE_INTERVAL = 600  # seconds between sweeps
+
+
+def auto_leave_stale_visitors() -> int:
+    """Check out visitors present for longer than visitor_auto_leave_hours.
+    Mirrors the manual /api/visitors/{id}/leave behaviour: keep or drop the record
+    depending on security_register_history. Returns the number swept."""
+    conn = get_db()
+    try:
+        settings = get_settings(conn)
+        if settings.get("visitor_auto_leave_enabled") != "1":
+            return 0
+        try:
+            hours = float(settings.get("visitor_auto_leave_hours", "14"))
+        except (TypeError, ValueError):
+            hours = 14.0
+        if hours <= 0:
+            return 0
+        cutoff = (datetime.now() - timedelta(hours=hours)).strftime("%Y-%m-%d %H:%M:%S")
+        stale = conn.execute(
+            "SELECT id FROM visitors WHERE left_at IS NULL AND arrived_at <= ?", (cutoff,)
+        ).fetchall()
+        if not stale:
+            return 0
+        ids = [row["id"] for row in stale]
+        marks = ",".join("?" * len(ids))
+        if settings.get("security_register_history") == "1":
+            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            conn.execute(f"UPDATE visitors SET left_at = ? WHERE id IN ({marks})", [now, *ids])
+        else:
+            conn.execute(f"DELETE FROM visitors WHERE id IN ({marks})", ids)
+        conn.commit()
+        return len(ids)
+    finally:
+        conn.close()
+
+
+def _auto_leave_loop():
+    while True:
+        try:
+            auto_leave_stale_visitors()
+        except Exception:
+            pass  # a failed sweep must never kill the thread; retry next cycle
+        _time.sleep(_AUTO_LEAVE_INTERVAL)
+
+
+threading.Thread(target=_auto_leave_loop, daemon=True, name="auto-leave").start()
+
+
 @app.get("/api/visitors/present")
 async def visitors_present(request: Request):
     """Return list of currently present visitors. Restricted to same-origin to
@@ -1327,6 +1390,12 @@ async def admin_delete_contact(request: Request, contact_id: int):
 
 _SECRET_SETTING_FIELDS = {"smtp_password", "conexteo_api_key"}
 
+# Settings that must parse as a number within these (inclusive) bounds.
+_NUMERIC_SETTING_RANGES = {
+    "visitor_auto_leave_hours": (0, 168),  # 0 disables the sweep; 168 = one week
+    "safety_duration": (0, 300),           # 0 = no auto-close, visitor must acknowledge
+}
+
 
 @app.post("/admin/settings")
 async def admin_update_settings(request: Request):
@@ -1341,11 +1410,22 @@ async def admin_update_settings(request: Request):
                 "notif_on_announce",
                 "repeat_count", "repeat_delay",
                 "contact_fields_enabled", "kiosk_instruction", "keyboard_size", "kiosk_font_size",
-                "security_register_enabled", "security_register_history"):
+                "security_register_enabled", "security_register_history",
+                "visitor_auto_leave_enabled", "visitor_auto_leave_hours",
+                "safety_enabled", "safety_title", "safety_text", "safety_duration"):
         value = form.get(key)
         if value is None:
             continue
         cleaned = value.strip()
+        # Numeric fields: reject anything out of range rather than storing a value
+        # the kiosk would have to second-guess at runtime.
+        if key in _NUMERIC_SETTING_RANGES:
+            lo, hi = _NUMERIC_SETTING_RANGES[key]
+            try:
+                if not (lo <= float(cleaned) <= hi):
+                    continue
+            except ValueError:
+                continue
         # Never overwrite a stored secret with an empty value (form fields are not pre-filled).
         if key in _SECRET_SETTING_FIELDS and cleaned == "":
             continue
@@ -1437,6 +1517,45 @@ async def admin_delete_kiosk_image(request: Request):
     conn = get_db()
     conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
                  ("kiosk_image_url", ""))
+    conn.commit()
+    conn.close()
+    return RedirectResponse(url="/admin", status_code=303)
+
+
+@app.post("/admin/safety-image")
+async def admin_upload_safety_image(request: Request):
+    require_auth(request)
+    form = await request.form()
+    file = form.get("safety_image_file")
+    if not file or not file.filename:
+        return RedirectResponse(url="/admin", status_code=303)
+
+    ext = Path(file.filename).suffix.lower()
+    if ext not in (".png", ".jpg", ".jpeg", ".svg", ".webp", ".gif"):
+        raise HTTPException(status_code=400, detail="Format non supporte (png, jpg, svg, webp, gif)")
+
+    content = await file.read()
+    img_path = BASE_DIR / "static" / f"safety{ext}"
+    for old in (BASE_DIR / "static").glob("safety.*"):
+        old.unlink()
+    img_path.write_bytes(content)
+
+    conn = get_db()
+    conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+                 ("safety_image_url", f"/static/safety{ext}"))
+    conn.commit()
+    conn.close()
+    return RedirectResponse(url="/admin", status_code=303)
+
+
+@app.post("/admin/safety-image/delete")
+async def admin_delete_safety_image(request: Request):
+    require_auth(request)
+    for old in (BASE_DIR / "static").glob("safety.*"):
+        old.unlink()
+    conn = get_db()
+    conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+                 ("safety_image_url", ""))
     conn.commit()
     conn.close()
     return RedirectResponse(url="/admin", status_code=303)

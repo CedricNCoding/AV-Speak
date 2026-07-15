@@ -297,6 +297,60 @@
             <p style="font-size:0.85rem; color:#888; margin-top:5px;">Formats accept&eacute;s : PNG, JPG, SVG, WebP, GIF</p>
         </div>
 
+        <!-- Safety instructions shown after an announce -->
+        <div class="settings-group" style="padding:20px; background:#fff8e1; border-radius:12px; margin-top:20px;">
+            <h3>Consignes de s&eacute;curit&eacute; (apr&egrave;s l'appel)</h3>
+            <p style="font-size:0.85rem; color:#888; margin-bottom:10px;">
+                Affich&eacute;es en plein &eacute;cran une fois le contact appel&eacute;, pendant que le visiteur
+                patiente. L'&eacute;cran ne s'affiche que si un texte ou une image est renseign&eacute;.
+            </p>
+            <form method="POST" action="/admin/settings">
+                <div class="color-row">
+                    <label>Activer les consignes de s&eacute;curit&eacute;</label>
+                    <select name="safety_enabled" style="width:100px;">
+                        <option value="1" {% if settings.get('safety_enabled','0') == '1' %}selected{% endif %}>Oui</option>
+                        <option value="0" {% if settings.get('safety_enabled','0') == '0' %}selected{% endif %}>Non</option>
+                    </select>
+                </div>
+                <div class="color-row">
+                    <label>Titre</label>
+                    <input type="text" name="safety_title" maxlength="80"
+                           value="{{ settings.get('safety_title', '') }}" style="width:320px;">
+                </div>
+                <div class="color-row">
+                    <label>Fermeture automatique (secondes)</label>
+                    <input type="number" name="safety_duration" min="0" max="300" step="1"
+                           value="{{ settings.get('safety_duration', '20') }}" style="width:100px;">
+                </div>
+                <p style="font-size:0.85rem; color:#888; margin:5px 0 15px;">
+                    0 = pas de fermeture automatique, le visiteur doit appuyer sur &laquo;&nbsp;J'ai compris&nbsp;&raquo;.
+                </p>
+                <div style="margin-top:8px;">
+                    <label style="display:block; margin-bottom:6px;">Texte des consignes</label>
+                    <textarea name="safety_text" rows="8"
+                        style="width:100%; max-width:600px; padding:10px; font-size:1rem; border:2px solid #ddd; border-radius:8px; font-family:inherit;">{{ settings.get('safety_text', '') }}</textarea>
+                </div>
+                <button type="submit" class="btn btn-primary" style="margin-top:12px;">Enregistrer</button>
+            </form>
+
+            <div style="margin-top:20px; border-top:1px solid #f0e0b0; padding-top:15px;">
+                <h4 style="margin:0 0 8px;">Image des consignes</h4>
+                {% if settings.get('safety_image_url', '') %}
+                <div style="margin:10px 0;">
+                    <img src="{{ settings.safety_image_url }}" alt="Consignes" style="max-height:150px; max-width:400px; border:1px solid #ddd; border-radius:8px; padding:5px; background:#fff;">
+                </div>
+                <form method="POST" action="/admin/safety-image/delete" style="display:inline;">
+                    <button type="submit" class="btn btn-small btn-danger">Supprimer l'image</button>
+                </form>
+                {% endif %}
+                <form method="POST" action="/admin/safety-image" enctype="multipart/form-data" style="margin-top:10px;">
+                    <input type="file" name="safety_image_file" accept=".png,.jpg,.jpeg,.svg,.webp,.gif" required>
+                    <button type="submit" class="btn btn-small btn-primary">Envoyer</button>
+                </form>
+                <p style="font-size:0.85rem; color:#888; margin-top:5px;">Formats accept&eacute;s : PNG, JPG, SVG, WebP, GIF</p>
+            </div>
+        </div>
+
         <div style="margin-top:30px; padding:20px; background:#f0f8ff; border-radius:12px;">
             <h3>Aper&ccedil;u</h3>
             <p style="margin:10px 0;">Les changements seront visibles sur le kiosk apr&egrave;s enregistrement.</p>
@@ -464,6 +518,25 @@
                 </div>
                 <p style="font-size:0.85rem; color:#888; margin:5px 0 15px;">
                     Si d&eacute;sactiv&eacute;, les enregistrements sont supprim&eacute;s au d&eacute;part du visiteur.
+                </p>
+                <div class="color-row">
+                    <label>Sortie automatique des visiteurs oubli&eacute;s</label>
+                    <select name="visitor_auto_leave_enabled" style="width:100px;">
+                        <option value="1" {% if settings.get('visitor_auto_leave_enabled','1') == '1' %}selected{% endif %}>Oui</option>
+                        <option value="0" {% if settings.get('visitor_auto_leave_enabled','1') == '0' %}selected{% endif %}>Non</option>
+                    </select>
+                </div>
+                <div class="color-row">
+                    <label>D&eacute;lai avant sortie automatique (heures)</label>
+                    <input type="number" name="visitor_auto_leave_hours" min="1" max="168" step="1"
+                           value="{{ settings.get('visitor_auto_leave_hours', '14') }}" style="width:100px;">
+                </div>
+                <p style="font-size:0.85rem; color:#888; margin:5px 0 15px;">
+                    Les visiteurs qui oublient de se d&eacute;loguer sont sortis automatiquement
+                    apr&egrave;s ce d&eacute;lai. <strong>&#9888; Cette liste sert aussi &agrave; l'alerte
+                    &eacute;vacuation :</strong> un visiteur sorti automatiquement n'appara&icirc;tra plus dans
+                    l'email d'&eacute;vacuation. Choisissez un d&eacute;lai plus long que votre plus longue
+                    journ&eacute;e de pr&eacute;sence.
                 </p>
             </div>
             <button type="submit" class="btn btn-primary">Enregistrer</button>

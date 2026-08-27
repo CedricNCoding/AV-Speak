@@ -92,17 +92,24 @@
             background: rgba(0,0,0,0.75); align-items: center; justify-content: center; padding: 20px;
         }
         .safety-overlay.active { display: flex; }
+        /* Taille reglable en admin (safety_size). Chaque palier fait grandir la boite,
+           le titre, le texte, l'image et le bouton ensemble via des variables. */
         .safety-box {
+            --sb-max: 760px; --sb-h2: 2rem; --sb-text: 1.2rem;
+            --sb-img: 300px; --sb-btn: 1.2rem; --sb-btn-pad: 16px 44px;
             background: #fff; color: #333; border-radius: 20px; padding: 32px 40px;
-            max-width: 720px; max-height: 90vh; overflow-y: auto; text-align: center;
+            max-width: var(--sb-max); max-height: 92vh; overflow-y: auto; text-align: center;
             box-shadow: 0 8px 40px rgba(0,0,0,0.35);
         }
-        .safety-box h2 { color: var(--color-primary); margin: 0 0 16px; font-size: 1.9rem; }
-        .safety-text { font-size: 1.15rem; line-height: 1.6; text-align: left; white-space: pre-wrap; }
+        .safety-box.safety-l   { --sb-max: 1000px; --sb-h2: 2.6rem; --sb-text: 1.5rem; --sb-img: 420px; --sb-btn: 1.5rem; --sb-btn-pad: 18px 52px; }
+        .safety-box.safety-xl  { --sb-max: 1300px; --sb-h2: 3.2rem; --sb-text: 1.9rem; --sb-img: 560px; --sb-btn: 1.8rem; --sb-btn-pad: 22px 60px; }
+        .safety-box.safety-full { --sb-max: 96vw; width: 96vw; min-height: 92vh; --sb-h2: 3.4rem; --sb-text: 2rem; --sb-img: 60vh; --sb-btn: 1.9rem; --sb-btn-pad: 24px 64px; }
+        .safety-box h2 { color: var(--color-primary); margin: 0 0 16px; font-size: var(--sb-h2); }
+        .safety-text { font-size: var(--sb-text); line-height: 1.6; text-align: left; white-space: pre-wrap; }
         /* block, sinon une image etroite laisse le bouton remonter a cote d'elle */
-        .safety-box img { display: block; max-width: 100%; max-height: 260px; border-radius: 10px; margin: 18px auto 0; }
+        .safety-box img { display: block; max-width: 100%; max-height: var(--sb-img); border-radius: 10px; margin: 18px auto 0; }
         .safety-ack {
-            margin-top: 24px; padding: 16px 44px; font-size: 1.2rem; font-weight: 500;
+            margin-top: 24px; padding: var(--sb-btn-pad); font-size: var(--sb-btn); font-weight: 500;
             background: var(--color-button); color: var(--color-button-text);
             border: none; border-radius: 12px; cursor: pointer;
         }
@@ -217,7 +224,7 @@
     {% if settings.get('safety_enabled', '0') == '1' and (settings.get('safety_text', '') or settings.get('safety_image_url', '')) %}
     <!-- Safety instructions: shown once the announce is done, while the visitor waits -->
     <div class="safety-overlay" id="safetyOverlay" role="dialog" aria-modal="true" aria-labelledby="safetyTitle">
-        <div class="safety-box">
+        <div class="safety-box safety-{{ settings.get('safety_size', 'L') | lower }}">
             <h2 id="safetyTitle">{{ settings.get('safety_title', '') }}</h2>
             {% if settings.get('safety_text', '') %}
             <div class="safety-text">{{ settings.get('safety_text', '') }}</div>

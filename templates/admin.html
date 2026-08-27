@@ -318,6 +318,16 @@
                            value="{{ settings.get('safety_title', '') }}" style="width:320px;">
                 </div>
                 <div class="color-row">
+                    <label>Taille du popup</label>
+                    <select name="safety_size" style="width:200px;">
+                        {% set sz = settings.get('safety_size', 'L') | upper %}
+                        <option value="M" {% if sz == 'M' %}selected{% endif %}>Moyen</option>
+                        <option value="L" {% if sz == 'L' %}selected{% endif %}>Grand</option>
+                        <option value="XL" {% if sz == 'XL' %}selected{% endif %}>Tr&egrave;s grand</option>
+                        <option value="FULL" {% if sz == 'FULL' %}selected{% endif %}>Plein &eacute;cran</option>
+                    </select>
+                </div>
+                <div class="color-row">
                     <label>Fermeture automatique (secondes)</label>
                     <input type="number" name="safety_duration" min="0" max="300" step="1"
                            value="{{ settings.get('safety_duration', '20') }}" style="width:100px;">

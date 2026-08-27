@@ -191,6 +191,7 @@ def init_db():
         "safety_text": "",
         "safety_image_url": "",
         "safety_duration": "20",
+        "safety_size": "L",  # M / L / XL / FULL — taille du popup consignes
         # Evacuation alert
         "evac_enabled": "0",
         "evac_code_hash": "",
@@ -1396,6 +1397,12 @@ _NUMERIC_SETTING_RANGES = {
     "safety_duration": (0, 300),           # 0 = no auto-close, visitor must acknowledge
 }
 
+# Settings restricted to a fixed set of values. safety_size ends up in a CSS class
+# on the kiosk, so an arbitrary value must never be stored.
+_ENUM_SETTING_VALUES = {
+    "safety_size": {"M", "L", "XL", "FULL"},
+}
+
 
 @app.post("/admin/settings")
 async def admin_update_settings(request: Request):
@@ -1412,11 +1419,16 @@ async def admin_update_settings(request: Request):
                 "contact_fields_enabled", "kiosk_instruction", "keyboard_size", "kiosk_font_size",
                 "security_register_enabled", "security_register_history",
                 "visitor_auto_leave_enabled", "visitor_auto_leave_hours",
-                "safety_enabled", "safety_title", "safety_text", "safety_duration"):
+                "safety_enabled", "safety_title", "safety_text", "safety_duration", "safety_size"):
         value = form.get(key)
         if value is None:
             continue
         cleaned = value.strip()
+        # Enum fields: only accept a value from the whitelist.
+        if key in _ENUM_SETTING_VALUES:
+            cleaned = cleaned.upper()
+            if cleaned not in _ENUM_SETTING_VALUES[key]:
+                continue
         # Numeric fields: reject anything out of range rather than storing a value
         # the kiosk would have to second-guess at runtime.
         if key in _NUMERIC_SETTING_RANGES:
